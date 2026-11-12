@@ -1,7 +1,7 @@
 name: Report a Bug
 description: An unexpected error or behavior
 projects:
-  - pendingintent/cdisc-concept-curation
+  - cdisc-org/cdisc-concept-curation
 type: Bug
 body:
   - type: dropdown

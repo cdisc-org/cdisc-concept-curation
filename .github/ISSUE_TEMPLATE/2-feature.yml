@@ -1,7 +1,7 @@
 name: Feature/Enhancement Request
 description: A request for a new Feature or Enhancement
 projects:
-  - pendingintent/cdisc-concept-curation
+  - cdisc-org/cdisc-concept-curation
 type: Feature
 body:
   - type: dropdown
