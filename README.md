@@ -14,7 +14,7 @@ A Flask web application for curating CDISC Biomedical Concepts (BCs). It replace
 ## Quick Start (no git required)
 
 If you're not a developer and just want to run the app locally: download the latest
-release archive from the [Releases page](https://github.com/pendingintent/cdisc-concept-curation/releases)
+release archive from the [Releases page](https://github.com/cdisc-org/cdisc-concept-curation/releases)
 (`.zip` for Windows, `.tar.gz` for Mac/Linux), extract it, and double-click the
 installer for your platform:
 
@@ -33,7 +33,7 @@ Maintainers cutting a release: see [RELEASING.md](RELEASING.md).
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/pendingintent/cdisc-concept-curation.git
+git clone https://github.com/cdisc-org/cdisc-concept-curation.git
 cd cdisc-concept-curation
 
 # 2. Create and activate a virtual environment
@@ -52,11 +52,11 @@ Pre-commit hooks will now run automatically before each `git commit`, enforcing 
 
 ## Submodules
 
-`cdisc-bc-ncit-alignment/` is a git submodule ([pendingintent/cdisc-bc-ncit-alignment](https://github.com/pendingintent/cdisc-bc-ncit-alignment)) containing standalone tools for aligning CDISC Biomedical Concepts with NCI Thesaurus codes. It is not part of the Flask app's import path — see its own README for setup and usage.
+`cdisc-bc-ncit-alignment/` is a git submodule ([cdisc-org/cdisc-bc-ncit-alignment](https://github.com/cdisc-org/cdisc-bc-ncit-alignment)) containing standalone tools for aligning CDISC Biomedical Concepts with NCI Thesaurus codes. It is not part of the Flask app's import path — see its own README for setup and usage.
 
 ```bash
 # If you haven't cloned yet, pull submodules along with the main repo:
-git clone --recurse-submodules https://github.com/pendingintent/cdisc-concept-curation.git
+git clone --recurse-submodules https://github.com/cdisc-org/cdisc-concept-curation.git
 
 # If you already cloned without --recurse-submodules:
 git submodule update --init
