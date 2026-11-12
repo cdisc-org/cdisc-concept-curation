@@ -150,9 +150,6 @@
         <button type="submit" class="btn btn-sm btn-primary">
           <i class="bi bi-floppy" aria-hidden="true"></i> Save Specialization
         </button>
-        <button type="button" id="generate-from-dec-btn" class="btn btn-sm btn-outline-secondary">
-          <i class="bi bi-lightning" aria-hidden="true"></i> Generate from DEC Templates
-        </button>
         <button type="button" id="add-spec-var-btn" class="btn btn-sm btn-outline-secondary">
           <i class="bi bi-plus-lg" aria-hidden="true"></i> Add Variable Row
         </button>
@@ -328,48 +325,6 @@
     varBody.addEventListener('click', function (e) {
       const btn = e.target.closest('.spec-var-delete-btn');
       if (btn) btn.closest('tr').remove();
-    });
-  }
-
-  // Generate from DEC templates: POST to backend endpoint
-  const generateBtn = document.getElementById('generate-from-dec-btn');
-  if (generateBtn) {
-    generateBtn.addEventListener('click', async function () {
-      const bcId = document.getElementById('bc_selector').value;
-      const domain = document.getElementById('spec_domain').value;
-      if (!bcId || !domain) {
-        alert('Please select a BC and domain before generating from templates.');
-        return;
-      }
-
-      generateBtn.disabled = true;
-      generateBtn.textContent = 'Generating…';
-
-      try {
-        const resp = await fetch('/specializations/generate-from-dec', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ bc_id: bcId, domain: domain })
-        });
-
-        if (!resp.ok) throw new Error('Generation failed');
-
-        const data = await resp.json();
-        if (data.variables && varBody) {
-          varBody.innerHTML = '';
-          varRowIndex = 0;
-          data.variables.forEach(function (v) {
-            varBody.appendChild(buildVariableRow(varRowIndex, v));
-            varRowIndex++;
-          });
-        }
-      } catch (err) {
-        alert('Could not generate template variables. Please try again.');
-        console.error('Generate from DEC error:', err);
-      } finally {
-        generateBtn.disabled = false;
-        generateBtn.innerHTML = '<i class="bi bi-lightning" aria-hidden="true"></i> Generate from DEC Templates';
-      }
     });
   }
 })();

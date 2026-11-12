@@ -1,9 +1,9 @@
 import logging
 
-from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, flash, redirect, render_template, request, url_for
 
 from extensions import db
-from models.bc import BiomedicalConcept, DataElementConcept
+from models.bc import BiomedicalConcept
 from models.specialization import DatasetSpecialization
 from services import notes_service
 from services.audit import log_change
@@ -34,18 +34,6 @@ def _get_domain_codes():
     from the most recent SDTM CT package, for the domain selector."""
     codes = CDISCApiClient().get_sdtm_domain_codes()
     return [c for c in codes if c.get("code")]
-
-
-def _variable_from_dec(dec):
-    """Best-effort variable row seeded from a BC's Data Element Concept.
-    A DEC doesn't carry most VLM columns (codelist, role, subject, ...), so
-    only sdtm_variable/dec_id/data_type are populated — the rest are left
-    blank for the user to fill in."""
-    row = dict.fromkeys(VARIABLE_FIELDS, "")
-    row["sdtm_variable"] = dec.dec_label or ""
-    row["dec_id"] = dec.dec_id or ""
-    row["data_type"] = dec.data_type or "string"
-    return row
 
 
 @bp.route("/")
@@ -169,45 +157,4 @@ def delete(vlm_group_id):
     db.session.delete(spec)
     db.session.commit()
     flash(f"Specialization {vlm_group_id} deleted", "success")
-    return redirect(url_for("specializations.index"))
-
-
-@bp.route("/generate-from-dec", methods=["POST"])
-def generate_from_dec():
-    """Return DEC-derived variable rows as JSON for the specialization form."""
-    data = request.get_json(silent=True) or {}
-    bc_id = data.get("bc_id", "").strip()
-    if not bc_id:
-        return jsonify({"error": "bc_id required"}), 400
-    decs = DataElementConcept.query.filter_by(bc_id=bc_id).all()
-    variables = [_variable_from_dec(d) for d in decs]
-    return jsonify({"variables": variables})
-
-
-@bp.route("/generate/<bc_id>", methods=["POST"])
-def generate(bc_id):
-    """Generate a specialization from DEC templates for a BC."""
-    bc = db.get_or_404(BiomedicalConcept, bc_id)
-    decs = DataElementConcept.query.filter_by(bc_id=bc_id).all()
-    domain = request.form.get("domain", "").strip()
-    if not domain:
-        flash("Domain is required", "danger")
-        return redirect(url_for("specializations.index"))
-    vlm_group_id = f"{bc_id}.{domain}"
-    existing = db.session.get(DatasetSpecialization, vlm_group_id)
-    if existing:
-        flash(f"Specialization {vlm_group_id} already exists", "warning")
-        return redirect(url_for("specializations.index"))
-    variables = [_variable_from_dec(d) for d in decs]
-    spec = DatasetSpecialization(
-        vlm_group_id=vlm_group_id,
-        bc_id=bc_id,
-        domain=domain,
-        short_name=bc.short_name,
-    )
-    spec.variables = variables
-    db.session.add(spec)
-    log_change("DatasetSpecialization", vlm_group_id, "created", actor="user", after=spec.to_dict())
-    db.session.commit()
-    flash(f"Specialization {vlm_group_id} generated", "success")
     return redirect(url_for("specializations.index"))
