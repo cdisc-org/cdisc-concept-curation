@@ -106,16 +106,17 @@
         </div>
       </div>
 
-      <!-- Variables table: one column per SDTM VLM worksheet field (I-AF) -->
+      <!-- Variables table: one read-only column per SDTM VLM worksheet field (I-AF).
+           Values are posted via hidden inputs; edits happen in the right-hand card. -->
       <h3 class="form-section-title">Variables</h3>
+      <p class="small text-secondary mb-2">Select a row, then choose <strong>Edit Variable Row</strong> (or double-click it) to edit all fields in the side card.</p>
       <div class="table-responsive mb-3">
-        <table class="dec-table" aria-label="Specialization variables">
+        <table class="dec-table spec-var-table" aria-label="Specialization variables">
           <thead>
             <tr>
               {% for field, label in variable_field_defs %}
               <th scope="col">{{ label }}</th>
               {% endfor %}
-              <th scope="col" style="width: 40px;"></th>
             </tr>
           </thead>
           <tbody id="spec-variables-body"
@@ -124,21 +125,10 @@
             {% if fs and fs.variables %}
               {% for var in fs.variables %}
               {% set row_idx = loop.index0 %}
-              <tr>
+              <tr class="spec-var-row" tabindex="0" aria-selected="false">
                 {% for field, label in variable_field_defs %}
-                <td>
-                  <input type="text" class="form-control form-control-sm"
-                         name="variables[{{ row_idx }}][{{ field }}]"
-                         value="{{ var[field] }}"
-                         aria-label="{{ label }}">
-                </td>
+                <td data-field="{{ field }}"><input type="hidden" name="variables[{{ row_idx }}][{{ field }}]" value="{{ var[field] }}"><span class="spec-var-text">{{ var[field] }}</span></td>
                 {% endfor %}
-                <td>
-                  <button type="button" class="btn btn-sm btn-outline-danger spec-var-delete-btn"
-                          aria-label="Delete variable row">
-                    <i class="bi bi-trash" aria-hidden="true"></i>
-                  </button>
-                </td>
               </tr>
               {% endfor %}
             {% endif %}
@@ -147,11 +137,14 @@
       </div>
 
       <div class="d-flex gap-2 flex-wrap">
-        <button type="submit" class="btn btn-sm btn-primary">
-          <i class="bi bi-floppy" aria-hidden="true"></i> Save Specialization
+        <button type="button" id="edit-spec-var-btn" class="btn btn-sm btn-outline-secondary" disabled>
+          <i class="bi bi-pencil-square" aria-hidden="true"></i> Edit Variable Row
         </button>
         <button type="button" id="add-spec-var-btn" class="btn btn-sm btn-outline-secondary">
           <i class="bi bi-plus-lg" aria-hidden="true"></i> Add Variable Row
+        </button>
+        <button type="submit" class="btn btn-sm btn-primary">
+          <i class="bi bi-floppy" aria-hidden="true"></i> Save Specialization
         </button>
       </div>
       </fieldset>
@@ -162,6 +155,20 @@
           Cancel
         </button>
       </div>
+      {% if edit_spec %}
+      <div class="d-flex gap-2 flex-wrap mt-3 pt-3 border-top" aria-label="Share for review">
+        <span class="small text-secondary align-self-center">Share for review:</span>
+        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('specializations.export', vlm_group_id=edit_spec.vlm_group_id, format='xlsx') }}">
+          <i class="bi bi-file-earmark-spreadsheet" aria-hidden="true"></i> Export XLSX
+        </a>
+        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('specializations.export', vlm_group_id=edit_spec.vlm_group_id, format='csv') }}">
+          <i class="bi bi-filetype-csv" aria-hidden="true"></i> Export CSV
+        </a>
+        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('specializations.print_view', vlm_group_id=edit_spec.vlm_group_id) }}" target="_blank" rel="noopener">
+          <i class="bi bi-printer" aria-hidden="true"></i> Print view
+        </a>
+      </div>
+      {% endif %}
     </form>
   </div>
 </div>
@@ -217,6 +224,18 @@
                  aria-label="Edit {{ spec.short_name }}">
                 <i class="bi bi-pencil" aria-hidden="true"></i> Edit
               </a>
+              <div class="dropdown">
+                <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle"
+                        data-bs-toggle="dropdown" aria-expanded="false"
+                        aria-label="Export {{ spec.short_name }}">
+                  <i class="bi bi-download" aria-hidden="true"></i> Export
+                </button>
+                <ul class="dropdown-menu">
+                  <li><a class="dropdown-item" href="{{ url_for('specializations.export', vlm_group_id=spec.vlm_group_id, format='xlsx') }}">XLSX</a></li>
+                  <li><a class="dropdown-item" href="{{ url_for('specializations.export', vlm_group_id=spec.vlm_group_id, format='csv') }}">CSV</a></li>
+                  <li><a class="dropdown-item" href="{{ url_for('specializations.print_view', vlm_group_id=spec.vlm_group_id) }}" target="_blank" rel="noopener">Print view</a></li>
+                </ul>
+              </div>
               <a href="{{ url_for('specializations.index', clone_from=spec.vlm_group_id) }}"
                  class="btn btn-sm btn-outline-secondary"
                  aria-label="Clone {{ spec.short_name }}">
@@ -251,6 +270,49 @@
 </div>
 {% endif %}
 
+{# ── Right-hand card for editing one variable row (all fields) ── #}
+{% set long_fields = ["codelist", "codelist_submission_value", "subset_codelist", "value_list", "linking_phrase", "object", "assigned_term", "origin_source"] %}
+{% set card_groups = [
+  ("Identity", ["sdtm_variable", "dec_id", "nsv_flag"]),
+  ("Terminology", ["codelist", "codelist_submission_value", "subset_codelist", "value_list", "assigned_term", "assigned_value"]),
+  ("Semantics", ["role", "subject", "linking_phrase", "predicate_term", "object"]),
+  ("Data type", ["data_type", "length", "format", "significant_digits"]),
+  ("Rules and origin", ["mandatory_variable", "mandatory_value", "origin_type", "origin_source", "comparator", "vlm_target"]),
+] %}
+{% set field_labels = dict(variable_field_defs) %}
+<div class="offcanvas offcanvas-end spec-var-card" tabindex="-1" id="variable-row-card"
+     aria-labelledby="variable-row-card-title" data-bs-scroll="true" data-bs-backdrop="false">
+  <div class="offcanvas-header">
+    <h2 class="offcanvas-title" id="variable-row-card-title">Variable Row</h2>
+    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+  </div>
+  <div class="offcanvas-body">
+    <div id="variable-row-card-error" class="alert alert-danger py-1 small d-none" role="alert">Variable is required.</div>
+    {% for group_title, group_fields in card_groups %}
+    <fieldset class="spec-var-card-group">
+      <legend>{{ group_title }}</legend>
+      {% for field in group_fields %}
+      <div class="mb-2">
+        <label for="card-{{ field }}" class="form-label small fw-semibold mb-1">{{ field_labels[field] }}</label>
+        {% if field in long_fields %}
+        <textarea id="card-{{ field }}" data-card-field="{{ field }}" class="form-control form-control-sm" rows="2"></textarea>
+        {% else %}
+        <input type="text" id="card-{{ field }}" data-card-field="{{ field }}" class="form-control form-control-sm">
+        {% endif %}
+      </div>
+      {% endfor %}
+    </fieldset>
+    {% endfor %}
+  </div>
+  <div class="offcanvas-footer d-flex gap-2 flex-wrap p-3 border-top">
+    <button type="button" id="card-apply-btn" class="btn btn-sm btn-primary">Apply</button>
+    <button type="button" id="card-delete-btn" class="btn btn-sm btn-outline-danger">
+      <i class="bi bi-trash" aria-hidden="true"></i> Delete Row
+    </button>
+    <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" data-bs-dismiss="offcanvas">Close</button>
+  </div>
+</div>
+
 {% if edit_spec %}
 {% set notes_entity_kind = "spec" %}
 {% set notes_entity_id = edit_spec.vlm_group_id %}
@@ -281,50 +343,124 @@
     });
   }
 
-  // Variable rows are built generically from the field list the server
-  // rendered the table header from, so JS never hand-duplicates the ~24
-  // SDTM VLM column names.
+  // Variable rows are read-only in the table; values live in hidden inputs
+  // (variables[i][field]) and are edited through the right-hand card, which
+  // is built from the same field list the table header was rendered from.
   const varBody = document.getElementById('spec-variables-body');
   const varFields = varBody ? JSON.parse(varBody.dataset.fields || '[]') : [];
-  let varRowIndex = varBody ? parseInt(varBody.dataset.rowCount || '0', 10) : 0;
-
-  function escapeAttr(value) {
-    return String(value == null ? '' : value).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
-  }
-
-  function buildVariableRow(rowIndex, values) {
-    values = values || {};
-    const cells = varFields.map(function (field) {
-      return `<td><input type="text" class="form-control form-control-sm"
-                     name="variables[${rowIndex}][${field}]"
-                     value="${escapeAttr(values[field])}" aria-label="${field}"></td>`;
-    }).join('');
-    const tr = document.createElement('tr');
-    tr.innerHTML = cells + `
-      <td>
-        <button type="button" class="btn btn-sm btn-outline-danger spec-var-delete-btn"
-                aria-label="Delete variable row">
-          <i class="bi bi-trash" aria-hidden="true"></i>
-        </button>
-      </td>
-    `;
-    return tr;
-  }
-
-  // Add variable row
+  const editBtn = document.getElementById('edit-spec-var-btn');
   const addVarBtn = document.getElementById('add-spec-var-btn');
-  if (addVarBtn && varBody) {
-    addVarBtn.addEventListener('click', function () {
-      varBody.appendChild(buildVariableRow(varRowIndex));
-      varRowIndex++;
+  const cardEl = document.getElementById('variable-row-card');
+  const cardTitle = document.getElementById('variable-row-card-title');
+  const cardError = document.getElementById('variable-row-card-error');
+  const applyBtn = document.getElementById('card-apply-btn');
+  const deleteBtn = document.getElementById('card-delete-btn');
+  const card = cardEl && window.bootstrap ? bootstrap.Offcanvas.getOrCreateInstance(cardEl) : null;
+  let selectedRow = null;
+  let editingRow = null;  // null => card is adding a new row
+
+  function cardInput(field) { return cardEl.querySelector('[data-card-field="' + field + '"]'); }
+
+  // Keep indices contiguous: the server stops reading at the first gap.
+  function reindexRows() {
+    Array.from(varBody.querySelectorAll('tr.spec-var-row')).forEach(function (tr, i) {
+      tr.querySelectorAll('input[type="hidden"]').forEach(function (inp) {
+        inp.name = inp.name.replace(/^variables\[\d+\]/, 'variables[' + i + ']');
+      });
     });
   }
 
-  // Delete variable rows via delegation
-  if (varBody) {
+  function selectRow(tr) {
+    if (selectedRow) { selectedRow.classList.remove('table-active'); selectedRow.setAttribute('aria-selected', 'false'); }
+    selectedRow = tr;
+    if (tr) { tr.classList.add('table-active'); tr.setAttribute('aria-selected', 'true'); }
+    if (editBtn) editBtn.disabled = !tr;
+  }
+
+  function rowValues(tr) {
+    const values = {};
+    tr.querySelectorAll('td[data-field]').forEach(function (td) { values[td.dataset.field] = td.querySelector('input').value; });
+    return values;
+  }
+
+  function buildRow(values) {
+    const tr = document.createElement('tr');
+    tr.className = 'spec-var-row';
+    tr.tabIndex = 0;
+    tr.setAttribute('aria-selected', 'false');
+    varFields.forEach(function (field) {
+      const td = document.createElement('td');
+      td.dataset.field = field;
+      const inp = document.createElement('input');
+      inp.type = 'hidden';
+      inp.name = 'variables[0][' + field + ']';  // renumbered by reindexRows()
+      const span = document.createElement('span');
+      span.className = 'spec-var-text';
+      td.appendChild(inp);
+      td.appendChild(span);
+      tr.appendChild(td);
+    });
+    writeRow(tr, values);
+    return tr;
+  }
+
+  function writeRow(tr, values) {
+    tr.querySelectorAll('td[data-field]').forEach(function (td) {
+      const v = values[td.dataset.field] || '';
+      td.querySelector('input').value = v;
+      td.querySelector('.spec-var-text').textContent = v;  // textContent: no HTML injection
+    });
+  }
+
+  function openCard(tr) {
+    editingRow = tr;
+    const values = tr ? rowValues(tr) : {};
+    varFields.forEach(function (field) { cardInput(field).value = values[field] || ''; });
+    cardTitle.textContent = tr ? 'Edit Variable Row' : 'Add Variable Row';
+    deleteBtn.classList.toggle('d-none', !tr);
+    cardError.classList.add('d-none');
+    if (card) card.show();
+  }
+
+  if (varBody && cardEl) {
     varBody.addEventListener('click', function (e) {
-      const btn = e.target.closest('.spec-var-delete-btn');
-      if (btn) btn.closest('tr').remove();
+      const tr = e.target.closest('tr.spec-var-row');
+      if (tr) selectRow(tr);
+    });
+    varBody.addEventListener('dblclick', function (e) {
+      const tr = e.target.closest('tr.spec-var-row');
+      if (tr) { selectRow(tr); openCard(tr); }
+    });
+    varBody.addEventListener('keydown', function (e) {
+      const tr = e.target.closest('tr.spec-var-row');
+      if (tr && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); selectRow(tr); }
+    });
+
+    if (editBtn) editBtn.addEventListener('click', function () { if (selectedRow) openCard(selectedRow); });
+    if (addVarBtn) addVarBtn.addEventListener('click', function () { openCard(null); });
+
+    applyBtn.addEventListener('click', function () {
+      const values = {};
+      varFields.forEach(function (field) { values[field] = cardInput(field).value.trim(); });
+      if (!values.sdtm_variable) { cardError.classList.remove('d-none'); cardInput('sdtm_variable').focus(); return; }
+      if (editingRow) {
+        writeRow(editingRow, values);
+      } else {
+        const tr = buildRow(values);
+        varBody.appendChild(tr);
+        reindexRows();
+        selectRow(tr);
+      }
+      if (card) card.hide();
+    });
+
+    deleteBtn.addEventListener('click', function () {
+      if (!editingRow) return;
+      if (selectedRow === editingRow) selectRow(null);
+      editingRow.remove();
+      editingRow = null;
+      reindexRows();
+      if (card) card.hide();
     });
   }
 })();

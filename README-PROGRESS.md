@@ -15,7 +15,7 @@ CDISC Biomedical Concept Curation — a Flask/Jinja web application for curating
 | BC CRUD + Export           | ✅ Complete    | JSON/XLSX/ODM-XML export                                             |
 | NCIt Mapping               | ✅ Complete    | EVS REST API search + mapping resolution                             |
 | LOINC API Explorer         | ✅ Complete    | LOINC search + BC metadata integration, `routes/loinc.py`            |
-| Dataset Specializations    | ✅ Complete    | Full CRUD, BC selection (local + Library, auto-stub), bulk import via ingestion |
+| Dataset Specializations    | ✅ Complete    | Full CRUD, BC selection (local + Library, auto-stub), bulk import via ingestion, side-card row editor, XLSX/CSV/print export |
 | Governance Workflow        | ✅ Complete    | 4-stage Kanban board, covers both BCs and Dataset Specializations    |
 | Notes (Governance Collaboration) | ✅ Complete | Per-BC/per-spec notes: create/edit/resolve/flag, locked at Ready to Publish, never exported, fully audited |
 | Audit Trail                | ✅ Complete    | Filterable audit log                                                 |
@@ -31,6 +31,16 @@ CDISC Biomedical Concept Curation — a Flask/Jinja web application for curating
 ## Daily Changelog
 
 ### 2026-11-12
+
+#### Added a Side Card for Editing Variable Rows, and XLSX/CSV/Print Export, on Dataset Specializations (Issue #82)
+
+- The specialization variable table was impossible to review: 24 narrow text inputs per row truncated long values and forced sideways scrolling, and there was no way to share a specialization for review.
+- `templates/specializations.html` — the table now shows all 24 columns as read-only wrapping text (values still posted via hidden `variables[i][field]` inputs, so the save path is unchanged). New button order: Edit Variable Row, Add Variable Row, Save Specialization, Cancel. Edit is disabled until a row is selected (click, or double-click to open). A right-hand offcanvas card (about 1/3 width) edits all 24 fields in five groups; Apply writes back, Delete Row lives in the card, and row indices are renumbered after every add/delete so the server never hits an index gap. Added Export XLSX / CSV / Print view links on the edit page and an Export dropdown per list row.
+- `routes/specializations.py` — added `GET /specializations/<id>/export?format=xlsx|csv` (XLSX default, 400 on other formats, allowed for Ready to Publish specs) and `GET /specializations/<id>/print`.
+- `services/export.py` — added `export_specialization_csv()` (one row per variable, 4 spec columns plus the 24 labelled variable columns); XLSX reuses `export_governance_xlsx` so the file stays re-importable.
+- `templates/specialization_print.html` (new) — standalone landscape print layout in CDISC colours and Arial, one block per variable showing every field.
+- `static/css/custom.css` — table and card styles (CDISC Blue `#134678`, Purple `#553278`, Orange `#D57E00`).
+- Tests written first in `tests/test_export_service.py` and `tests/test_specializations_routes.py` (exports, print view, button order, card fields, hidden-input posting); 511 tests passing, lint clean ✅. The card's JS parses (`node --check`) but has not yet been exercised in a browser.
 
 #### Removed the "Generate from DEC Templates" Feature from Dataset Specializations (Issue #99)
 

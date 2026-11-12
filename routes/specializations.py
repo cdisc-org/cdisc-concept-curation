@@ -1,6 +1,6 @@
 import logging
 
-from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask import Blueprint, Response, abort, flash, redirect, render_template, request, send_file, url_for
 
 from extensions import db
 from models.bc import BiomedicalConcept
@@ -9,6 +9,7 @@ from services import notes_service
 from services.audit import log_change
 from services.bc_service import get_or_create_bc_stub
 from services.cdisc_api import CDISCApiClient
+from services.export import export_governance_xlsx, export_specialization_csv
 from services.ingestion import VARIABLE_FIELD_DEFS, VARIABLE_FIELDS
 
 logger = logging.getLogger(__name__)
@@ -89,6 +90,35 @@ def detail(vlm_group_id):
         notes=notes_service.list_spec_notes(vlm_group_id),
         page_title="Specializations",
     )
+
+
+@bp.route("/<vlm_group_id>/export")
+def export(vlm_group_id):
+    """Download one specialization as XLSX (default) or CSV for sharing/review."""
+    spec = db.get_or_404(DatasetSpecialization, vlm_group_id)
+    fmt = request.args.get("format", "xlsx").lower()
+    filename = f"specialization_{vlm_group_id}"
+    if fmt == "xlsx":
+        return send_file(
+            export_governance_xlsx([], [spec]),
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            as_attachment=True,
+            download_name=f"{filename}.xlsx",
+        )
+    if fmt == "csv":
+        return Response(
+            export_specialization_csv(spec),
+            mimetype="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{filename}.csv"'},
+        )
+    abort(400, description="format must be 'xlsx' or 'csv'")
+
+
+@bp.route("/<vlm_group_id>/print")
+def print_view(vlm_group_id):
+    """Standalone, print-friendly view showing every variable field in full."""
+    spec = db.get_or_404(DatasetSpecialization, vlm_group_id)
+    return render_template("specialization_print.html", spec=spec, variable_field_defs=VARIABLE_FIELD_DEFS)
 
 
 def _variables_from_form(form):

@@ -434,3 +434,141 @@ class TestDomainSelector:
         with patcher:
             resp = client.get("/specializations/")
         assert resp.status_code == 200
+
+
+def _spec_with_vars(app, bc_id, vlm_group_id="VLM1"):
+    with app.app_context():
+        spec = DatasetSpecialization(vlm_group_id=vlm_group_id, bc_id=bc_id, domain="LB", short_name="Ketones LB")
+        spec.variables = [
+            {"sdtm_variable": "LBTESTCD", "codelist": "LBTESTCD", "data_type": "text"},
+            {"sdtm_variable": "LBORRES", "value_list": "POSITIVE; NEGATIVE"},
+        ]
+        db.session.add(spec)
+        db.session.commit()
+
+
+class TestExport:
+    def test_xlsx_export_has_sdtm_sheet_with_variables(self, client, app, sample_bc):
+        import io
+
+        import openpyxl
+
+        _spec_with_vars(app, sample_bc)
+        resp = client.get("/specializations/VLM1/export?format=xlsx")
+        assert resp.status_code == 200
+        assert "spreadsheetml" in resp.mimetype
+        assert "attachment" in resp.headers["Content-Disposition"]
+        assert "VLM1" in resp.headers["Content-Disposition"]
+        wb = openpyxl.load_workbook(io.BytesIO(resp.data))
+        assert "SDTM_LB" in wb.sheetnames
+        ws = wb["SDTM_LB"]
+        assert ws.max_row == 3
+        headers = [c.value for c in ws[1]]
+        assert ws.cell(row=2, column=headers.index("vlm_group_id") + 1).value == "VLM1"
+        assert ws.cell(row=3, column=headers.index("sdtm_variable") + 1).value == "LBORRES"
+
+    def test_xlsx_is_default_format(self, client, app, sample_bc):
+        _spec_with_vars(app, sample_bc)
+        resp = client.get("/specializations/VLM1/export")
+        assert "spreadsheetml" in resp.mimetype
+
+    def test_csv_export(self, client, app, sample_bc):
+        _spec_with_vars(app, sample_bc)
+        resp = client.get("/specializations/VLM1/export?format=csv")
+        assert resp.status_code == 200
+        assert resp.mimetype == "text/csv"
+        assert ".csv" in resp.headers["Content-Disposition"]
+        lines = resp.data.decode().strip().splitlines()
+        assert len(lines) == 3
+        assert "LBTESTCD" in lines[1]
+
+    def test_unknown_format_is_400(self, client, app, sample_bc):
+        _spec_with_vars(app, sample_bc)
+        assert client.get("/specializations/VLM1/export?format=pdf").status_code == 400
+
+    def test_export_404_for_unknown_spec(self, client):
+        assert client.get("/specializations/NOPE/export?format=csv").status_code == 404
+
+    def test_export_unaffected_by_published_status(self, client, app, sample_bc):
+        _spec_with_vars(app, sample_bc)
+        with app.app_context():
+            db.session.get(DatasetSpecialization, "VLM1").status = "published"
+            db.session.commit()
+        assert client.get("/specializations/VLM1/export?format=csv").status_code == 200
+
+
+class TestPrintView:
+    def test_print_view_shows_every_field_label_and_value(self, client, app, sample_bc):
+        from services.ingestion import VARIABLE_FIELD_DEFS
+
+        _spec_with_vars(app, sample_bc)
+        resp = client.get("/specializations/VLM1/print")
+        assert resp.status_code == 200
+        body = resp.data.decode()
+        assert "Ketones LB" in body
+        assert "LBTESTCD" in body and "POSITIVE; NEGATIVE" in body
+        for _, label in VARIABLE_FIELD_DEFS:
+            assert label in body
+
+    def test_print_view_is_standalone_and_has_print_button(self, client, app, sample_bc):
+        _spec_with_vars(app, sample_bc)
+        body = client.get("/specializations/VLM1/print").data.decode()
+        assert "window.print()" in body
+        assert "@media print" in body
+        assert 'class="navbar' not in body
+
+    def test_print_404_for_unknown_spec(self, client):
+        assert client.get("/specializations/NOPE/print").status_code == 404
+
+
+class TestEditCard:
+    def _body(self, client, app, sample_bc):
+        _spec_with_vars(app, sample_bc)
+        patcher, _ = _patch_client()
+        with patcher:
+            return client.get("/specializations/VLM1").data.decode()
+
+    def test_button_order(self, client, app, sample_bc):
+        body = self._body(client, app, sample_bc)
+        positions = [body.index(label) for label in ("Edit Variable Row", "Add Variable Row", "Save Specialization", ">\n          Cancel")]
+        assert positions == sorted(positions)
+
+    def test_edit_button_disabled_until_row_selected(self, client, app, sample_bc):
+        import re
+
+        body = self._body(client, app, sample_bc)
+        tag = re.search(r'<button[^>]*id="edit-spec-var-btn"[^>]*>', body).group(0)
+        assert "disabled" in tag
+
+    def test_offcanvas_card_opens_on_right_with_all_fields(self, client, app, sample_bc):
+        from services.ingestion import VARIABLE_FIELD_DEFS
+
+        body = self._body(client, app, sample_bc)
+        assert 'id="variable-row-card"' in body
+        assert "offcanvas-end" in body
+        for field, _ in VARIABLE_FIELD_DEFS:
+            assert f'data-card-field="{field}"' in body
+
+    def test_table_shows_all_columns_read_only_with_hidden_inputs(self, client, app, sample_bc):
+        from services.ingestion import VARIABLE_FIELD_DEFS
+
+        body = self._body(client, app, sample_bc)
+        for _, label in VARIABLE_FIELD_DEFS:
+            assert f'<th scope="col">{label}</th>' in body
+        # Each stored value is still posted via hidden inputs, unchanged name format.
+        assert 'type="hidden" name="variables[0][sdtm_variable]" value="LBTESTCD"' in body
+        assert 'type="hidden" name="variables[1][value_list]" value="POSITIVE; NEGATIVE"' in body
+        assert 'type="text" class="form-control form-control-sm"\n                         name="variables[' not in body
+
+    def test_export_and_print_links_on_detail_page(self, client, app, sample_bc):
+        body = self._body(client, app, sample_bc)
+        assert "/specializations/VLM1/export?format=xlsx" in body
+        assert "/specializations/VLM1/export?format=csv" in body
+        assert "/specializations/VLM1/print" in body
+
+    def test_list_page_has_export_links_per_row(self, client, app, sample_bc):
+        _spec_with_vars(app, sample_bc)
+        patcher, _ = _patch_client()
+        with patcher:
+            body = client.get("/specializations/").data.decode()
+        assert "/specializations/VLM1/export?format=xlsx" in body
