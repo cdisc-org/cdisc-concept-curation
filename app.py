@@ -38,6 +38,7 @@ def create_app(config_class=Config):
     from routes.ncit import bp as ncit_bp
     from routes.ncit_alignment import bp as ncit_alignment_bp
     from routes.notes import bp as notes_bp
+    from routes.reports import bp as reports_bp
     from routes.specializations import bp as specializations_bp
 
     app.register_blueprint(dashboard_bp, url_prefix="/")
@@ -50,6 +51,7 @@ def create_app(config_class=Config):
     app.register_blueprint(governance_bp, url_prefix="/governance")
     app.register_blueprint(audit_bp, url_prefix="/audit")
     app.register_blueprint(notes_bp, url_prefix="/notes")
+    app.register_blueprint(reports_bp, url_prefix="/reports")
 
     return app
 

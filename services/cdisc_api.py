@@ -125,6 +125,58 @@ class CDISCApiClient:
 
         return _cached(self._cache_key("dataset_specializations"), _fetch)
 
+    # ── Release packages (BC / SDTM dataset specialization) ────────────
+
+    def _list_links(self, cache_name, path, link_key):
+        def _fetch():
+            try:
+                data = self._get(path)
+                links = data.get("_links", {}).get(link_key, [])
+                return links if isinstance(links, list) else []
+            except (requests.RequestException, ValueError) as e:
+                logger.error("CDISC Library fetch failed for %s: %s", path, e)
+                return [{"error": str(e)}]
+
+        return _cached(self._cache_key(cache_name), _fetch)
+
+    def get_bc_packages(self):
+        """List released BC packages: [{href, title, type}, ...]."""
+        return self._list_links("bc_packages", "/mdr/bc/packages", "packages")
+
+    def get_spec_packages(self):
+        """List released SDTM dataset specialization packages."""
+        return self._list_links("spec_packages", "/mdr/specializations/sdtm/packages", "packages")
+
+    def get_package_bcs(self, date):
+        """List the BCs contained in the BC package effective on ``date``."""
+        return self._list_links(f"bc_package:{date}", f"/mdr/bc/packages/{date}/biomedicalconcepts", "biomedicalConcepts")
+
+    def get_package_specs(self, date):
+        """List the SDTM specializations in the package effective on ``date``."""
+        return self._list_links(f"spec_package:{date}", f"/mdr/specializations/sdtm/packages/{date}/datasetspecializations", "datasetSpecializations")
+
+    def _get_detail(self, cache_name, path):
+        def _fetch():
+            try:
+                return self._get(path)
+            except (requests.RequestException, ValueError) as e:
+                logger.error("CDISC Library fetch failed for %s: %s", path, e)
+                return {"error": str(e)}
+
+        key = self._cache_key(cache_name)
+        result = _cached(key, _fetch)
+        if isinstance(result, dict) and "error" in result:
+            _cache.pop(key, None)  # don't pin a transient failure for the TTL
+        return result
+
+    def get_package_bc(self, date, concept_id):
+        """Fetch one BC as it appears in the package effective on ``date``."""
+        return self._get_detail(f"bc_package:{date}:{concept_id}", f"/mdr/bc/packages/{date}/biomedicalconcepts/{concept_id}")
+
+    def get_package_spec(self, date, spec_id):
+        """Fetch one SDTM specialization as it appears in a package."""
+        return self._get_detail(f"spec_package:{date}:{spec_id}", f"/mdr/specializations/sdtm/packages/{date}/datasetspecializations/{spec_id}")
+
     def get_ct_packages(self):
         """
         List all Controlled Terminology packages from the CDISC Library

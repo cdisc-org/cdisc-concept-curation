@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }} — CDISC BC Curation{% endblock %}
+{% block page_title %}{{ title }}{% endblock %}
+
+{% block content %}
+{% include '_reports_breadcrumb.html' %}
+<div class="page-header">
+  <h1 class="page-title">{{ title }}</h1>
+  <span class="bc-badge bc-badge-published">Package {{ date }}</span>
+  <div class="page-actions">
+    <a href="{{ url_for('reports.package_detail', date=date) }}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left" aria-hidden="true"></i> Back to Package
+    </a>
+  </div>
+</div>
+
+<div class="bc-card">
+  <table class="bc-table" aria-label="{{ 'Biomedical concept' if kind == 'bc' else 'Dataset specialization' }} detail">
+    <thead><tr><th scope="col">Field</th><th scope="col">Value</th></tr></thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <th scope="row">{{ row.field }}</th>
+        {% if row['items'] is none %}
+        <td style="white-space:pre-wrap;word-break:break-word;">{{ row.value }}</td>
+        {% else %}
+        <td>
+          {% if row['items'] %}
+          <ul class="mb-0 ps-3">
+            {% for it in row['items'] %}
+            <li>
+              {{ it.label }}
+              {% if it.details %}
+              <ul class="small text-muted ps-3 mb-1">
+                {% for k, v in it.details %}<li><span class="fw-semibold">{{ k }}:</span> {{ v }}</li>{% endfor %}
+              </ul>
+              {% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}—{% endif %}
+        </td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
