@@ -29,10 +29,20 @@ CDISC Biomedical Concept Curation — a Flask/Jinja web application for curating
 | NCIt/BC Alignment          | ✅ Complete    | Background job runs the `cdisc-bc-ncit-alignment` submodule's 2-stage pipeline, `services/alignment_runner.py` |
 | Release Package Reports    | ✅ Complete    | Reports > Packages and Comparison (BC + SDTM specialization release packages), `routes/reports.py`, `services/package_service.py` |
 | SDTM Domains Report        | ✅ Complete    | Reports > SDTM Domains: domains with specializations → specializations per domain → latest-package spec detail |
+| BC Categories Report       | ✅ Complete    | Reports > BC Categories: categories → BCs per category → existing Library BC detail page |
 
 ## Daily Changelog
 
 ### 2026-11-13
+
+#### Added Reports > BC Categories (Issue #3)
+
+- New `BC Categories` entry in the `REPORTS` sidebar section (`templates/base.html`).
+- `BC Categories` (`/reports/categories`) lists, alphabetically (case-insensitive), every BC category from the CDISC Library; selecting a category (`/reports/categories/<category>`) lists its BCs by title; each BC links to the existing Library BC detail page (`/bc/library/<concept_id>`). Unknown category returns 404; if the category list fails to load, the page redirects with an error instead of a misleading 404.
+- `services/cdisc_api.py` — new `get_bc_categories()` (`/mdr/bc/categories`) and `get_category_bcs(category)` (`/mdr/bc/biomedicalconcepts?category=...`, server-side filter verified live) using the shared stale-tolerant cache; error markers are never cached.
+- `services/package_service.py` — `list_categories`, `category_bcs`; `routes/reports.py` — `categories` and `category_detail`; new `reports_categories.html` and `reports_category_bcs.html` (existing branded `bc-card`/`bc-table` classes); `_reports_breadcrumb.html` extended (Reports › BC Categories › Category).
+- No schema change, no Alembic revision.
+- Tests written first; 631 tests passing, lint clean ✅
 
 #### Added Reports > SDTM Domains (Issue #106)
 

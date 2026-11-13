@@ -138,3 +138,39 @@ def test_get_domain_specs_caches_per_domain_and_reports_errors():
         assert c.get_domain_specs("LB") == [{"href": "b"}]
     with patch.object(CDISCApiClient, "_get", side_effect=requests.RequestException("down")):
         assert c.get_domain_specs("AE") == [{"error": "down"}]
+
+
+# ── BC categories (#3) ──────────────────────────────────────────────────
+
+
+def test_get_bc_categories_returns_names():
+    payload = {"_links": {"categories": [{"name": "Lipid Measurements", "_links": {}}, {"name": "Laboratory Procedures"}, {"_links": {}}]}}
+    with patch.object(CDISCApiClient, "_get", return_value=payload) as g:
+        out = _client().get_bc_categories()
+    g.assert_called_once_with("/mdr/bc/categories")
+    assert out == [{"name": "Lipid Measurements"}, {"name": "Laboratory Procedures"}]  # nameless entries dropped
+
+
+def test_get_bc_categories_error_is_marker_and_not_cached():
+    c = _client()
+    with patch.object(CDISCApiClient, "_get", side_effect=requests.RequestException("down")):
+        assert c.get_bc_categories() == [{"error": "down"}]
+    with patch.object(CDISCApiClient, "_get", return_value={"_links": {"categories": [{"name": "A"}]}}):
+        assert c.get_bc_categories() == [{"name": "A"}]
+
+
+def test_get_category_bcs_filters_by_category_and_encodes_name():
+    links = [{"href": "/mdr/bc/biomedicalconcepts/C64812", "title": "Triglyceride Measurement"}]
+    with patch.object(CDISCApiClient, "_get", return_value={"_links": {"biomedicalConcepts": links}}) as g:
+        out = _client().get_category_bcs("Lipid Measurements/Other")
+    g.assert_called_once_with("/mdr/bc/biomedicalconcepts?category=Lipid%20Measurements%2FOther")
+    assert out == links
+
+
+def test_get_category_bcs_caches_per_category_and_reports_errors():
+    c = _client()
+    with patch.object(CDISCApiClient, "_get", side_effect=[{"_links": {"biomedicalConcepts": [{"href": "a"}]}}, {"_links": {"biomedicalConcepts": [{"href": "b"}]}}]):
+        assert c.get_category_bcs("X") == [{"href": "a"}]
+        assert c.get_category_bcs("Y") == [{"href": "b"}]
+    with patch.object(CDISCApiClient, "_get", side_effect=requests.RequestException("down")):
+        assert c.get_category_bcs("Z") == [{"error": "down"}]

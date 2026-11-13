@@ -79,6 +79,21 @@ def domain_specs(client, domain):
     return _items(client.get_domain_specs(domain))
 
 
+def list_categories(client, with_errors=False):
+    """BC category names, ascending (case-insensitive); with ``with_errors``
+    returns (names, [error messages])."""
+    entries = client.get_bc_categories()
+    names = sorted({e["name"] for e in entries if e.get("name") and "error" not in e}, key=str.lower)
+    errors = [e["error"] for e in entries if "error" in e]
+    return (names, errors) if with_errors else names
+
+
+def category_bcs(client, category):
+    """(items, errors) for the BCs in ``category``; items are [{id, title}]
+    sorted by title."""
+    return _items(client.get_category_bcs(category))
+
+
 def latest_spec_package_date(client):
     """(date, errors): effective date of the newest SDTM specialization package
     (None if there is none) and any error messages from loading that list, so a

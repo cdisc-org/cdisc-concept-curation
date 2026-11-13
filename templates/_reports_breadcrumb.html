@@ -1,4 +1,4 @@
-{# Breadcrumb for Reports pages. Optional vars: date, item (Packages); request.endpoint reports.domain* (SDTM Domains, with optional domain, item). #}
+{# Breadcrumb for Reports pages. Optional vars: date, item (Packages); request.endpoint reports.domain* (SDTM Domains, with optional domain, item); reports.categor* (BC Categories, with optional category). #}
 <nav aria-label="breadcrumb">
   <ol class="breadcrumb" style="--bs-breadcrumb-divider: '›';">
     <li class="breadcrumb-item"><a href="{{ url_for('reports.packages') }}">Reports</a></li>
@@ -8,6 +8,13 @@
     <li class="breadcrumb-item active" aria-current="page">{{ domain }}</li>
     {% else %}
     <li class="breadcrumb-item active" aria-current="page">SDTM Domains</li>
+    {% endif %}
+    {% elif request.endpoint in ('reports.categories', 'reports.category_detail') %}
+    {% if category %}
+    <li class="breadcrumb-item"><a href="{{ url_for('reports.categories') }}">BC Categories</a></li>
+    <li class="breadcrumb-item active" aria-current="page">{{ category }}</li>
+    {% else %}
+    <li class="breadcrumb-item active" aria-current="page">BC Categories</li>
     {% endif %}
     {% elif date %}
     <li class="breadcrumb-item"><a href="{{ url_for('reports.packages') }}">Packages</a></li>
