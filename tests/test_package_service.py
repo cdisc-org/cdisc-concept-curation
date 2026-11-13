@@ -324,9 +324,14 @@ class TestDomains:
         assert ps.domain_specs(c, "VS") == ([], ["down"])
 
     def test_latest_spec_package_date_picks_newest_with_specs(self):
-        assert ps.latest_spec_package_date(_client()) == "2025-01-01"
+        assert ps.latest_spec_package_date(_client()) == ("2025-01-01", [])
 
     def test_latest_spec_package_date_none_without_spec_packages(self):
         c = _client()
         c.get_spec_packages.return_value = []
-        assert ps.latest_spec_package_date(c) is None
+        assert ps.latest_spec_package_date(c) == (None, [])
+
+    def test_latest_spec_package_date_surfaces_list_errors(self):
+        c = _client()
+        c.get_spec_packages.return_value = [{"error": "boom"}]
+        assert ps.latest_spec_package_date(c) == (None, ["boom"])

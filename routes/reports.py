@@ -97,4 +97,5 @@ def domain_detail(domain):
             return redirect(url_for("reports.domains"))
         abort(404)
     specs, spec_errors = ps.domain_specs(client, domain)
-    return render_template("reports_domain_specs.html", domain=domain, specs=specs, errors=spec_errors, package_date=ps.latest_spec_package_date(client))
+    package_date, package_errors = ps.latest_spec_package_date(client)
+    return render_template("reports_domain_specs.html", domain=domain, specs=specs, errors=spec_errors + package_errors, package_date=package_date)

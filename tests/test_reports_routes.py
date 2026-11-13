@@ -320,6 +320,16 @@ def test_domain_specs_without_spec_package_are_plain_text_with_notice(client):
     assert "No SDTM specialization package" in html
 
 
+def test_domain_specs_package_list_error_is_shown_not_reported_as_missing(client):
+    c = _client_mock()
+    c.get_spec_packages.return_value = [{"error": "boom"}]
+    with patch("routes.reports.CDISCApiClient", return_value=c):
+        html = client.get("/reports/domains/VS").get_data(as_text=True)
+    assert "CDISC Library error: boom" in html
+    assert "No SDTM specialization package" not in html
+    assert "Systolic Blood Pressure" in html and "/spec/SYSBP" not in html
+
+
 def test_domain_specs_breadcrumb(client):
     with _patch():
         crumb = _breadcrumb(client.get("/reports/domains/VS").get_data(as_text=True))

@@ -10,7 +10,7 @@
 </div>
 
 {% for e in errors %}<div class="alert alert-warning">CDISC Library error: {{ e }}</div>{% endfor %}
-{% if specs and not package_date %}
+{% if specs and not package_date and not errors %}
 <div class="alert alert-warning">No SDTM specialization package is available, so detail links are disabled.</div>
 {% endif %}
 

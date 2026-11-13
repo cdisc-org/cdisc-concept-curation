@@ -80,8 +80,12 @@ def domain_specs(client, domain):
 
 
 def latest_spec_package_date(client):
-    """Effective date of the newest package that contains SDTM specializations, or None."""
-    return next((p["date"] for p in list_packages(client) if p["has_spec"]), None)
+    """(date, errors): effective date of the newest SDTM specialization package
+    (None if there is none) and any error messages from loading that list, so a
+    failed fetch is never mistaken for "no package"."""
+    good, errors = _split(client.get_spec_packages())
+    dates = [d for d in (package_date(lnk["href"]) for lnk in good) if d]
+    return (max(dates) if dates else None), errors
 
 
 _KIND_LABELS = {"bcs": "biomedical concept", "specs": "SDTM specialization"}
