@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}Release Packages — CDISC BC Curation{% endblock %}
+{% block page_title %}Release Packages{% endblock %}
+
+{% block content %}
+{% include '_reports_breadcrumb.html' %}
+<div class="page-header">
+  <h1 class="page-title">Release Packages</h1>
+  <div class="page-actions">
+    <a href="{{ url_for('reports.comparison') }}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left-right" aria-hidden="true"></i> Compare Packages
+    </a>
+  </div>
+</div>
+
+{% for e in errors %}<div class="alert alert-warning">CDISC Library error: {{ e }}</div>{% endfor %}
+
+<div class="bc-card">
+  {% if packages %}
+  <table class="bc-table" aria-label="Released packages, newest first">
+    <thead>
+      <tr>
+        <th scope="col">Effective Date</th>
+        <th scope="col">Biomedical Concepts</th>
+        <th scope="col">SDTM Specializations</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in packages %}
+      <tr>
+        <td><a href="{{ url_for('reports.package_detail', date=p.date) }}">{{ p.date }}</a></td>
+        <td>{{ 'Included' if p.has_bc else '—' }}</td>
+        <td>{{ 'Included' if p.has_spec else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-muted mb-0">No release packages available.</p>
+  {% endif %}
+</div>
+{% endblock %}

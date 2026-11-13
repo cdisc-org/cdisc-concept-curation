@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block title %}Compare Packages — CDISC BC Curation{% endblock %}
+{% block page_title %}Reports &rsaquo; Comparison{% endblock %}
+
+{% macro item_table(items, label, kind, show_diff) %}
+  {% if items %}
+  <table class="bc-table mb-3" aria-label="{{ label }}">
+    <thead><tr>{% if show_diff %}<th scope="col" style="width:2.5rem;"></th>{% endif %}<th scope="col">ID</th><th scope="col">Title</th></tr></thead>
+    <tbody>
+      {% for i in items %}
+      <tr>
+        {% if show_diff %}
+        <td>
+          <button type="button" class="btn btn-sm btn-outline-secondary diff-toggle" aria-expanded="false"
+                  aria-label="Show field differences for {{ i.id }}"
+                  data-url="{{ url_for('reports.comparison_diff', kind=kind, id=i.id, a=a, b=b) }}">
+            <i class="bi bi-chevron-right" aria-hidden="true"></i>
+          </button>
+        </td>
+        {% endif %}
+        <td>{{ i.id }}</td>
+        <td>{{ i.title }}</td>
+      </tr>
+      {% if show_diff %}
+      <tr class="diff-row" hidden><td></td><td colspan="2"><div class="diff-body small text-muted">Loading…</div></td></tr>
+      {% endif %}
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-muted">None.</p>
+  {% endif %}
+{% endmacro %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Compare Release Packages</h1>
+</div>
+
+{% for e in errors %}<div class="alert alert-warning">CDISC Library error: {{ e }}</div>{% endfor %}
+{% if warning %}<div class="alert alert-warning">{{ warning }}</div>{% endif %}
+
+<form method="get" class="bc-card mb-3">
+  <div class="row g-2 align-items-end">
+    <div class="col-md-4">
+      <label for="pkg-a" class="form-label form-label-sm">Package 1</label>
+      <select id="pkg-a" name="a" class="form-select form-select-sm" required>
+        <option value="">Select a package…</option>
+        {% for p in packages %}<option value="{{ p.date }}" {% if p.date == a %}selected{% endif %}>{{ p.date }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-4">
+      <label for="pkg-b" class="form-label form-label-sm">Package 2</label>
+      <select id="pkg-b" name="b" class="form-select form-select-sm" required>
+        <option value="">Select a package…</option>
+        {% for p in packages %}<option value="{{ p.date }}" {% if p.date == b %}selected{% endif %}>{{ p.date }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-4">
+      <button type="submit" class="btn btn-primary btn-sm">Compare</button>
+    </div>
+  </div>
+</form>
+
+{% if result %}
+{% for e in result.errors %}<div class="alert alert-warning">CDISC Library error: {{ e }}</div>{% endfor %}
+<p class="text-muted">Comparing <strong>{{ a }}</strong> (older) with <strong>{{ b }}</strong> (newer).</p>
+{% for heading, key, kind in (('Biomedical Concepts', 'bcs', 'bc'), ('SDTM Dataset Specializations', 'specs', 'spec')) %}
+{% set r = result[key] %}
+<div class="bc-card mb-3">
+  <h2 class="form-section-title">{{ heading }}</h2>
+  {% if r.skipped %}
+  <div class="alert alert-warning mb-0">{{ r.skipped }}</div>
+  {% else %}
+  <h3 class="h6">Added in {{ b }} ({{ r.added | length }})</h3>
+  {{ item_table(r.added, 'Added ' ~ heading, kind, false) }}
+  <h3 class="h6">Removed since {{ a }} ({{ r.removed | length }})</h3>
+  {{ item_table(r.removed, 'Removed ' ~ heading, kind, false) }}
+  <h3 class="h6">In both packages ({{ r.common | length }}) <span class="text-muted fw-normal">— expand a row to see changed fields</span></h3>
+  {{ item_table(r.common, 'Common ' ~ heading, kind, true) }}
+  {% endif %}
+</div>
+{% endfor %}
+
+<script>
+document.querySelectorAll('.diff-toggle').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    var row = btn.closest('tr').nextElementSibling;
+    var body = row.querySelector('.diff-body');
+    var open = row.hidden;
+    row.hidden = !open;
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    btn.querySelector('i').className = open ? 'bi bi-chevron-down' : 'bi bi-chevron-right';
+    if (open && !btn.dataset.loaded) {
+      btn.dataset.loaded = '1';
+      fetch(btn.dataset.url).then(function (r) { return r.text(); })
+        .then(function (html) { body.innerHTML = html; })
+        .catch(function () { body.textContent = 'Could not load differences.'; btn.dataset.loaded = ''; });
+    }
+  });
+});
+</script>
+{% endif %}
+{% endblock %}

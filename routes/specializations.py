@@ -1,19 +1,31 @@
+import io
 import logging
 
-from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, abort, flash, redirect, render_template, request, send_file, url_for
 
 from extensions import db
-from models.bc import BiomedicalConcept, DataElementConcept
+from models.bc import BiomedicalConcept
 from models.specialization import DatasetSpecialization
 from services import notes_service
 from services.audit import log_change
 from services.bc_service import get_or_create_bc_stub
 from services.cdisc_api import CDISCApiClient
+from services.export import export_governance_xlsx, export_specialization_csv
 from services.ingestion import VARIABLE_FIELD_DEFS, VARIABLE_FIELDS
 
 logger = logging.getLogger(__name__)
 
 bp = Blueprint("specializations", __name__)
+
+# Governance stage -> display label. Single source for every template in this
+# blueprint (list, edit page, print view) so "published" always reads
+# "Ready to Publish" and never leaks as the raw/title-cased status value.
+STATUS_LABELS = {"provisional": "Provisional", "sme_review": "SME Review", "cdisc_approval": "CDISC Approval", "published": "Ready to Publish"}
+
+
+@bp.context_processor
+def _inject_status_labels():
+    return {"status_labels": STATUS_LABELS}
 
 
 def _get_bc_options():
@@ -34,18 +46,6 @@ def _get_domain_codes():
     from the most recent SDTM CT package, for the domain selector."""
     codes = CDISCApiClient().get_sdtm_domain_codes()
     return [c for c in codes if c.get("code")]
-
-
-def _variable_from_dec(dec):
-    """Best-effort variable row seeded from a BC's Data Element Concept.
-    A DEC doesn't carry most VLM columns (codelist, role, subject, ...), so
-    only sdtm_variable/dec_id/data_type are populated — the rest are left
-    blank for the user to fill in."""
-    row = dict.fromkeys(VARIABLE_FIELDS, "")
-    row["sdtm_variable"] = dec.dec_label or ""
-    row["dec_id"] = dec.dec_id or ""
-    row["data_type"] = dec.data_type or "string"
-    return row
 
 
 @bp.route("/")
@@ -101,6 +101,38 @@ def detail(vlm_group_id):
         notes=notes_service.list_spec_notes(vlm_group_id),
         page_title="Specializations",
     )
+
+
+@bp.route("/<vlm_group_id>/export")
+def export(vlm_group_id):
+    """Download one specialization as XLSX (default) or CSV for sharing/review."""
+    spec = db.get_or_404(DatasetSpecialization, vlm_group_id)
+    fmt = request.args.get("format", "xlsx").lower()
+    filename = f"specialization_{vlm_group_id}"
+    if fmt == "xlsx":
+        return send_file(
+            export_governance_xlsx([], [spec]),
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            as_attachment=True,
+            download_name=f"{filename}.xlsx",
+        )
+    if fmt == "csv":
+        # send_file quotes/RFC 5987-encodes download_name, so IDs with quotes or
+        # non-Latin-1 characters can't break the header (same as the XLSX branch).
+        return send_file(
+            io.BytesIO(export_specialization_csv(spec).encode("utf-8")),
+            mimetype="text/csv",
+            as_attachment=True,
+            download_name=f"{filename}.csv",
+        )
+    abort(400, description="format must be 'xlsx' or 'csv'")
+
+
+@bp.route("/<vlm_group_id>/print")
+def print_view(vlm_group_id):
+    """Standalone, print-friendly view showing every variable field in full."""
+    spec = db.get_or_404(DatasetSpecialization, vlm_group_id)
+    return render_template("specialization_print.html", spec=spec, variable_field_defs=VARIABLE_FIELD_DEFS)
 
 
 def _variables_from_form(form):
@@ -169,45 +201,4 @@ def delete(vlm_group_id):
     db.session.delete(spec)
     db.session.commit()
     flash(f"Specialization {vlm_group_id} deleted", "success")
-    return redirect(url_for("specializations.index"))
-
-
-@bp.route("/generate-from-dec", methods=["POST"])
-def generate_from_dec():
-    """Return DEC-derived variable rows as JSON for the specialization form."""
-    data = request.get_json(silent=True) or {}
-    bc_id = data.get("bc_id", "").strip()
-    if not bc_id:
-        return jsonify({"error": "bc_id required"}), 400
-    decs = DataElementConcept.query.filter_by(bc_id=bc_id).all()
-    variables = [_variable_from_dec(d) for d in decs]
-    return jsonify({"variables": variables})
-
-
-@bp.route("/generate/<bc_id>", methods=["POST"])
-def generate(bc_id):
-    """Generate a specialization from DEC templates for a BC."""
-    bc = db.get_or_404(BiomedicalConcept, bc_id)
-    decs = DataElementConcept.query.filter_by(bc_id=bc_id).all()
-    domain = request.form.get("domain", "").strip()
-    if not domain:
-        flash("Domain is required", "danger")
-        return redirect(url_for("specializations.index"))
-    vlm_group_id = f"{bc_id}.{domain}"
-    existing = db.session.get(DatasetSpecialization, vlm_group_id)
-    if existing:
-        flash(f"Specialization {vlm_group_id} already exists", "warning")
-        return redirect(url_for("specializations.index"))
-    variables = [_variable_from_dec(d) for d in decs]
-    spec = DatasetSpecialization(
-        vlm_group_id=vlm_group_id,
-        bc_id=bc_id,
-        domain=domain,
-        short_name=bc.short_name,
-    )
-    spec.variables = variables
-    db.session.add(spec)
-    log_change("DatasetSpecialization", vlm_group_id, "created", actor="user", after=spec.to_dict())
-    db.session.commit()
-    flash(f"Specialization {vlm_group_id} generated", "success")
     return redirect(url_for("specializations.index"))
