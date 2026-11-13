@@ -43,7 +43,7 @@
     <div><span>VLM Group ID:</span> {{ spec.vlm_group_id }}</div>
     <div><span>BC ID:</span> {{ spec.bc_id }}</div>
     <div><span>Domain:</span> {{ spec.domain or '—' }}</div>
-    <div><span>Status:</span> {{ (spec.status or 'provisional') | replace('_', ' ') | title }}</div>
+    <div><span>Status:</span> {{ status_labels.get(spec.status or 'provisional', (spec.status or 'provisional') | replace('_', ' ') | title) }}</div>
     <div><span>Variables:</span> {{ spec.variables | length }}</div>
   </div>
 

@@ -41,6 +41,7 @@ CDISC Biomedical Concept Curation — a Flask/Jinja web application for curating
 - `templates/specialization_print.html` (new) — standalone landscape print layout in CDISC colours and Arial, one block per variable showing every field.
 - `static/css/custom.css` — table and card styles (CDISC Blue `#134678`, Purple `#553278`, Orange `#D57E00`).
 - Tests written first in `tests/test_export_service.py` and `tests/test_specializations_routes.py` (exports, print view, button order, card fields, hidden-input posting); 511 tests passing, lint clean ✅. The card's JS parses (`node --check`) but has not yet been exercised in a browser.
+- PR review follow-ups (claude bot, all four accepted): the card now re-binds to the highlighted row when another row is clicked while it is open, and its subtitle shows "Row N of M — variable" so a stale target is visible; Ready to Publish specs no longer wire row/card handlers and the card's Apply/Delete are disabled; the CSV download goes through `send_file(download_name=...)` so IDs with quotes or non-Latin-1 characters yield a valid `Content-Disposition`; the print view uses a single `STATUS_LABELS` map (shared with the list page via a blueprint context processor) so Ready to Publish no longer prints as "Published". 517 tests passing.
 
 #### Removed the "Generate from DEC Templates" Feature from Dataset Specializations (Issue #99)
 

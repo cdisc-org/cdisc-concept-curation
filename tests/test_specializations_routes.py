@@ -482,6 +482,17 @@ class TestExport:
         assert len(lines) == 3
         assert "LBTESTCD" in lines[1]
 
+    def test_csv_filename_is_safely_encoded_for_quotes_and_non_latin1(self, client, app, sample_bc):
+        _spec_with_vars(app, sample_bc, vlm_group_id='A"B\u2014C')
+        from urllib.parse import quote
+
+        resp = client.get("/specializations/" + quote('A"B\u2014C') + "/export?format=csv")
+        assert resp.status_code == 200
+        disposition = resp.headers["Content-Disposition"]
+        assert 'A"B' not in disposition  # a raw quote would end the quoted filename early
+        assert "filename*=UTF-8''" in disposition  # RFC 5987 form for the non-Latin-1 dash
+        disposition.encode("latin-1")  # WSGI header values must be latin-1 encodable
+
     def test_unknown_format_is_400(self, client, app, sample_bc):
         _spec_with_vars(app, sample_bc)
         assert client.get("/specializations/VLM1/export?format=pdf").status_code == 400
@@ -572,3 +583,61 @@ class TestEditCard:
         with patcher:
             body = client.get("/specializations/").data.decode()
         assert "/specializations/VLM1/export?format=xlsx" in body
+
+
+class TestStatusLabels:
+    def _set_status(self, app, sample_bc, status):
+        with app.app_context():
+            spec = db.session.get(DatasetSpecialization, "VLM1")
+            if spec is None:
+                _spec_with_vars(app, sample_bc)
+                spec = db.session.get(DatasetSpecialization, "VLM1")
+            spec.status = status
+            db.session.commit()
+
+    def _print_body(self, client, app, sample_bc, status):
+        self._set_status(app, sample_bc, status)
+        return client.get("/specializations/VLM1/print").data.decode()
+
+    def test_print_view_uses_app_status_labels(self, client, app, sample_bc):
+        expected = {"provisional": "Provisional", "sme_review": "SME Review", "cdisc_approval": "CDISC Approval", "published": "Ready to Publish"}
+        for status, label in expected.items():
+            body = self._print_body(client, app, sample_bc, status)
+            assert f"<span>Status:</span> {label}<" in body
+
+    def test_ready_to_publish_never_printed_as_published(self, client, app, sample_bc):
+        body = self._print_body(client, app, sample_bc, "published")
+        assert "Ready to Publish" in body
+        assert "<span>Status:</span> Published" not in body
+
+
+class TestLockedSpecCard:
+    def _body(self, client, app, sample_bc, status):
+        _spec_with_vars(app, sample_bc)
+        with app.app_context():
+            db.session.get(DatasetSpecialization, "VLM1").status = status
+            db.session.commit()
+        patcher, _ = _patch_client()
+        with patcher:
+            return client.get("/specializations/VLM1").data.decode()
+
+    def test_published_spec_marks_table_locked_and_disables_card_actions(self, client, app, sample_bc):
+        import re
+
+        body = self._body(client, app, sample_bc, "published")
+        assert 'data-locked="true"' in body
+        for btn_id in ("card-apply-btn", "card-delete-btn"):
+            tag = re.search(rf'<button[^>]*id="{btn_id}"[^>]*>', body).group(0)
+            assert "disabled" in tag
+
+    def test_editable_spec_is_not_locked(self, client, app, sample_bc):
+        import re
+
+        body = self._body(client, app, sample_bc, "provisional")
+        assert 'data-locked="false"' in body
+        tag = re.search(r'<button[^>]*id="card-apply-btn"[^>]*>', body).group(0)
+        assert "disabled" not in tag
+
+    def test_card_shows_which_row_is_being_edited(self, client, app, sample_bc):
+        body = self._body(client, app, sample_bc, "provisional")
+        assert 'id="variable-row-card-subtitle"' in body

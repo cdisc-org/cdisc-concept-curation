@@ -120,6 +120,7 @@
             </tr>
           </thead>
           <tbody id="spec-variables-body"
+                 data-locked="{{ 'true' if edit_spec and edit_spec.status == 'published' else 'false' }}"
                  data-row-count="{{ (fs.variables | length) if fs and fs.variables else 0 }}"
                  data-fields='{{ variable_field_defs | map(attribute=0) | list | tojson }}'>
             {% if fs and fs.variables %}
@@ -212,7 +213,6 @@
             {{ vcount }} variable{{ 's' if vcount != 1 else '' }}
           </td>
           <td>
-            {% set status_labels = {"provisional": "Provisional", "sme_review": "SME Review", "cdisc_approval": "CDISC Approval", "published": "Ready to Publish"} %}
             <span class="bc-badge bc-badge-{{ (spec.status or 'provisional') | replace('_', '-') }}">
               {{ status_labels.get(spec.status, (spec.status or 'provisional') | replace('_', ' ') | title) }}
             </span>
@@ -283,7 +283,10 @@
 <div class="offcanvas offcanvas-end spec-var-card" tabindex="-1" id="variable-row-card"
      aria-labelledby="variable-row-card-title" data-bs-scroll="true" data-bs-backdrop="false">
   <div class="offcanvas-header">
-    <h2 class="offcanvas-title" id="variable-row-card-title">Variable Row</h2>
+    <div>
+      <h2 class="offcanvas-title" id="variable-row-card-title">Variable Row</h2>
+      <div class="small" id="variable-row-card-subtitle"></div>
+    </div>
     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
   </div>
   <div class="offcanvas-body">
@@ -305,8 +308,8 @@
     {% endfor %}
   </div>
   <div class="offcanvas-footer d-flex gap-2 flex-wrap p-3 border-top">
-    <button type="button" id="card-apply-btn" class="btn btn-sm btn-primary">Apply</button>
-    <button type="button" id="card-delete-btn" class="btn btn-sm btn-outline-danger">
+    <button type="button" id="card-apply-btn" class="btn btn-sm btn-primary"{% if edit_spec and edit_spec.status == 'published' %} disabled{% endif %}>Apply</button>
+    <button type="button" id="card-delete-btn" class="btn btn-sm btn-outline-danger"{% if edit_spec and edit_spec.status == 'published' %} disabled{% endif %}>
       <i class="bi bi-trash" aria-hidden="true"></i> Delete Row
     </button>
     <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" data-bs-dismiss="offcanvas">Close</button>
@@ -356,8 +359,16 @@
   const applyBtn = document.getElementById('card-apply-btn');
   const deleteBtn = document.getElementById('card-delete-btn');
   const card = cardEl && window.bootstrap ? bootstrap.Offcanvas.getOrCreateInstance(cardEl) : null;
+  const locked = varBody ? varBody.dataset.locked === 'true' : false;
+  const cardSubtitle = document.getElementById('variable-row-card-subtitle');
   let selectedRow = null;
   let editingRow = null;  // null => card is adding a new row
+
+  function rowLabel(tr) {
+    const rows = Array.from(varBody.querySelectorAll('tr.spec-var-row'));
+    const name = tr.querySelector('td[data-field="sdtm_variable"] input').value;
+    return 'Row ' + (rows.indexOf(tr) + 1) + ' of ' + rows.length + (name ? ' \u2014 ' + name : '');
+  }
 
   function cardInput(field) { return cardEl.querySelector('[data-card-field="' + field + '"]'); }
 
@@ -417,15 +428,21 @@
     const values = tr ? rowValues(tr) : {};
     varFields.forEach(function (field) { cardInput(field).value = values[field] || ''; });
     cardTitle.textContent = tr ? 'Edit Variable Row' : 'Add Variable Row';
+    cardSubtitle.textContent = tr ? rowLabel(tr) : 'New row';
     deleteBtn.classList.toggle('d-none', !tr);
     cardError.classList.add('d-none');
     if (card) card.show();
   }
 
-  if (varBody && cardEl) {
+  // Locked (Ready to Publish) specs stay read-only: no row or card handlers.
+  if (varBody && cardEl && !locked) {
     varBody.addEventListener('click', function (e) {
       const tr = e.target.closest('tr.spec-var-row');
-      if (tr) selectRow(tr);
+      if (!tr) return;
+      selectRow(tr);
+      // The card has no backdrop, so rows stay clickable while it is open:
+      // keep the card bound to the highlighted row, never a stale one.
+      if (cardEl.classList.contains('show') && editingRow && tr !== editingRow) openCard(tr);
     });
     varBody.addEventListener('dblclick', function (e) {
       const tr = e.target.closest('tr.spec-var-row');

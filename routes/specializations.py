@@ -1,6 +1,7 @@
+import io
 import logging
 
-from flask import Blueprint, Response, abort, flash, redirect, render_template, request, send_file, url_for
+from flask import Blueprint, abort, flash, redirect, render_template, request, send_file, url_for
 
 from extensions import db
 from models.bc import BiomedicalConcept
@@ -15,6 +16,16 @@ from services.ingestion import VARIABLE_FIELD_DEFS, VARIABLE_FIELDS
 logger = logging.getLogger(__name__)
 
 bp = Blueprint("specializations", __name__)
+
+# Governance stage -> display label. Single source for every template in this
+# blueprint (list, edit page, print view) so "published" always reads
+# "Ready to Publish" and never leaks as the raw/title-cased status value.
+STATUS_LABELS = {"provisional": "Provisional", "sme_review": "SME Review", "cdisc_approval": "CDISC Approval", "published": "Ready to Publish"}
+
+
+@bp.context_processor
+def _inject_status_labels():
+    return {"status_labels": STATUS_LABELS}
 
 
 def _get_bc_options():
@@ -106,10 +117,13 @@ def export(vlm_group_id):
             download_name=f"{filename}.xlsx",
         )
     if fmt == "csv":
-        return Response(
-            export_specialization_csv(spec),
+        # send_file quotes/RFC 5987-encodes download_name, so IDs with quotes or
+        # non-Latin-1 characters can't break the header (same as the XLSX branch).
+        return send_file(
+            io.BytesIO(export_specialization_csv(spec).encode("utf-8")),
             mimetype="text/csv",
-            headers={"Content-Disposition": f'attachment; filename="{filename}.csv"'},
+            as_attachment=True,
+            download_name=f"{filename}.csv",
         )
     abort(400, description="format must be 'xlsx' or 'csv'")
 
