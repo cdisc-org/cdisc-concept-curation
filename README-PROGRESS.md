@@ -27,11 +27,27 @@ CDISC Biomedical Concept Curation — a Flask/Jinja web application for curating
 | Pre-commit Hooks           | ✅ Complete    | flake8 + black enforced on commit                                    |
 | Test Suite                 | 🚧 In Progress | BC routes, LOINC, NCIt coverage added                                |
 | NCIt/BC Alignment          | ✅ Complete    | Background job runs the `cdisc-bc-ncit-alignment` submodule's 2-stage pipeline, `services/alignment_runner.py` |
+| Release Package Reports    | ✅ Complete    | Reports > Packages and Comparison (BC + SDTM specialization release packages), `routes/reports.py`, `services/package_service.py` |
 
 ## Daily Changelog
 
 ### 2026-11-12
 
+#### Added Reports > Packages and Reports > Comparison (Issue #101)
+
+- New `REPORTS` sidebar section (`templates/base.html`) with `Packages` and `Comparison` entries.
+- `Packages` (`/reports/packages`) lists every released BC / SDTM specialization package newest first; selecting one lists its biomedical concepts and SDTM dataset specializations; selecting an item shows its CDISC Library detail in a Field/Value table.
+- `Comparison` (`/reports/comparison`) takes two packages from dropdowns and a **Compare** button, and shows Added / Removed / In-both tables for concepts and specializations (older package is always the base). Field-level differences for items in both packages load lazily when a row is expanded (`/reports/comparison/diff`).
+- `services/cdisc_api.py` — new package methods (`get_bc_packages`, `get_spec_packages`, `get_package_bcs`, `get_package_specs`, `get_package_bc`, `get_package_spec`) using the shared cache; failed detail fetches are not cached. Specializations are SDTM only (the generic `/specializations/packages` endpoint returns 404).
+- `services/package_service.py` — package listing, contents, compare, flatten and field diff; `routes/reports.py` registered at `/reports` in `app.py`; five new `reports_*.html` templates; dates and item IDs validated before use in API paths.
+- Package item detail pages render list-valued fields (notably `dataElementConcepts`, plus synonyms/categories/resultScales) as bulleted lists, with each DEC's name, conceptId and attributes nested beneath, instead of raw JSON (`package_service.detail_rows`).
+- Reports > Packages pages show breadcrumb navigation (e.g. Reports › Packages › 2026-11-02 › C117466), each ancestor linking back (`templates/_reports_breadcrumb.html`).
+- `pyproject.toml` — added `.venv` to isort `skip` and black `extend-exclude` so formatters can no longer rewrite installed packages when run from the repo root.
+- Comparison expanded rows now show a Field / Change / package-A / package-B table: one row per changed field, one per added or removed list value, and `dataElementConcepts` matched by `conceptId` so each added/removed/changed DEC gets its own readable rows instead of a JSON blob (`package_service.diff_items`).
+- SDTM specializations get the same readable treatment: `variables` entries are matched by `name` in the comparison diff (nested attributes such as `codelist.submissionValue` get their own Field/Change rows), and the specialization detail page lists each variable with its nested attributes flattened instead of JSON.
+- PR #103 review fixes: package fetches now let errors propagate through the stale-tolerant cache (a Library blip serves stale data and error markers are never stored); package pages and comparisons fetch only the kinds a date actually has and show "no package" notes instead of 404 banners; a kind that is missing or failed to load on either side is skipped with a message rather than diffed against an empty list; comparison now renders fetch errors; domain-keyed specialization links are flattened; dot-only item IDs (`.`, `..`) are rejected.
+- Tests written first: `tests/test_cdisc_api_packages.py`, `tests/test_package_service.py`, `tests/test_reports_routes.py`; 528 tests passing on Python 3.12, lint clean ✅
+- Note: the project `.venv` (Python 3.14) fails to import alembic 1.18.4, independent of this change; tests were run in a Python 3.12 venv matching CI.
 #### Added a Side Card for Editing Variable Rows, and XLSX/CSV/Print Export, on Dataset Specializations (Issue #82)
 
 - The specialization variable table was impossible to review: 24 narrow text inputs per row truncated long values and forced sideways scrolling, and there was no way to share a specialization for review.

@@ -1,0 +1,17 @@
+{# Breadcrumb for Reports > Packages pages. Optional vars: date, item. #}
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb" style="--bs-breadcrumb-divider: '›';">
+    <li class="breadcrumb-item"><a href="{{ url_for('reports.packages') }}">Reports</a></li>
+    {% if date %}
+    <li class="breadcrumb-item"><a href="{{ url_for('reports.packages') }}">Packages</a></li>
+    {% if item %}
+    <li class="breadcrumb-item"><a href="{{ url_for('reports.package_detail', date=date) }}">{{ date }}</a></li>
+    <li class="breadcrumb-item active" aria-current="page">{{ item }}</li>
+    {% else %}
+    <li class="breadcrumb-item active" aria-current="page">{{ date }}</li>
+    {% endif %}
+    {% else %}
+    <li class="breadcrumb-item active" aria-current="page">Packages</li>
+    {% endif %}
+  </ol>
+</nav>

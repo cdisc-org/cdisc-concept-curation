@@ -82,6 +82,22 @@
       </a>
     </div>
 
+    <div class="nav-section">
+      <div class="nav-section-label">Reports</div>
+      <a href="{{ url_for('reports.packages') }}"
+         class="nav-item {% if request.endpoint in ('reports.packages', 'reports.package_detail', 'reports.package_item') %}active{% endif %}"
+         aria-current="{% if request.endpoint in ('reports.packages', 'reports.package_detail', 'reports.package_item') %}page{% endif %}">
+        <i class="bi bi-box-seam nav-icon" aria-hidden="true"></i>
+        Packages
+      </a>
+      <a href="{{ url_for('reports.comparison') }}"
+         class="nav-item {% if request.endpoint and request.endpoint.startswith('reports.comparison') %}active{% endif %}"
+         aria-current="{% if request.endpoint and request.endpoint.startswith('reports.comparison') %}page{% endif %}">
+        <i class="bi bi-arrow-left-right nav-icon" aria-hidden="true"></i>
+        Comparison
+      </a>
+    </div>
+
     <div class="sidebar-footer">
       CDISC BC Platform &mdash; v2025.12
     </div>
