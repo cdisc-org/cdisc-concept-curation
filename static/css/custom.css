@@ -1125,3 +1125,15 @@ code, .mono {
 }
 
 .form-inline { display: inline; }
+
+
+/* ── Specialization variable table (read-only) + side edit card ── */
+.spec-var-table .spec-var-row { cursor: pointer; }
+.spec-var-table .spec-var-row:focus-visible { outline: 2px solid #D57E00; outline-offset: -2px; }
+.spec-var-table .spec-var-row.table-active > td { background: rgba(19, 70, 120, 0.12); }
+.spec-var-table td { min-width: 110px; max-width: 260px; white-space: normal; overflow-wrap: anywhere; vertical-align: top; }
+.spec-var-card { width: 33vw; min-width: 340px; font-family: Arial, Helvetica, sans-serif; }
+.spec-var-card .offcanvas-header { background: #134678; color: #fff; }
+.spec-var-card .offcanvas-title { font-size: 15px; font-weight: 700; margin: 0; }
+.spec-var-card-group { border: 0; border-top: 2px solid #D57E00; padding: 8px 0 0; margin: 0 0 14px; }
+.spec-var-card-group legend { float: none; width: auto; padding: 0; margin: 0 0 6px; font-size: 12px; font-weight: 700; color: #553278; }
