@@ -30,6 +30,15 @@ CDISC Biomedical Concept Curation — a Flask/Jinja web application for curating
 
 ## Daily Changelog
 
+### 2026-11-12
+
+#### Removed the "Generate from DEC Templates" Feature from Dataset Specializations (Issue #99)
+
+- Seeding specialization variable rows from a BC's Data Element Concepts never produced correct results (a DEC doesn't carry most VLM columns), so the feature was removed end to end rather than left as dead code.
+- `templates/specializations.html` — removed the "Generate from DEC Templates" button and its click-handler JS; "Add Variable Row" and "Save Specialization" are unchanged.
+- `routes/specializations.py` — removed `POST /specializations/generate-from-dec`, `POST /specializations/generate/<bc_id>` (which had no callers), and the `_variable_from_dec()` helper, plus the imports they left unused.
+- `tests/test_specializations_routes.py` — replaced `TestGenerate` / `TestGenerateFromDec` with `TestGenerateFromDecRemoved` (button absent from the page; both endpoints return 404/405), written test-first; 492 tests passing, lint clean ✅
+
 ### 2026-09-14
 
 #### Fixed a Stuck NCIt/BC Alignment Job Permanently Blocking New Runs

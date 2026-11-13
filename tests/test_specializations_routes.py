@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 from extensions import db
 from models.audit import AuditLog
-from models.bc import BiomedicalConcept, DataElementConcept
+from models.bc import BiomedicalConcept
 from models.specialization import DatasetSpecialization
 
 LIBRARY_LINKS = [
@@ -349,68 +349,25 @@ class TestLibraryDetail:
         assert resp.headers["Location"] in ("/", "http://localhost/")
 
 
-class TestGenerate:
-    def _add_decs(self, app, bc_id):
-        with app.app_context():
-            db.session.add_all(
-                [
-                    DataElementConcept(dec_id=f"{bc_id}.DEC.1", bc_id=bc_id, dec_label="Result", data_type="decimal", required=True, sort_order=0),
-                    DataElementConcept(dec_id=f"{bc_id}.DEC.2", bc_id=bc_id, dec_label="Unit", data_type="string", sort_order=1),
-                ]
-            )
-            db.session.commit()
+class TestGenerateFromDecRemoved:
+    """Issue #99: DEC templates never yield correct specializations, so the feature was removed."""
 
-    def test_generate_requires_domain(self, client, app, sample_bc):
-        self._add_decs(app, sample_bc)
-        resp = client.post(f"/specializations/generate/{sample_bc}", data={"domain": ""})
-        assert resp.status_code == 302
-        with app.app_context():
-            assert DatasetSpecialization.query.count() == 0
-
-    def test_generate_builds_variables_from_decs(self, client, app, sample_bc):
-        self._add_decs(app, sample_bc)
-        resp = client.post(f"/specializations/generate/{sample_bc}", data={"domain": "SDTM"})
-        assert resp.status_code == 302
-        with app.app_context():
-            spec = db.session.get(DatasetSpecialization, f"{sample_bc}.SDTM")
-            assert spec is not None
-            assert [v["sdtm_variable"] for v in spec.variables] == ["Result", "Unit"]
-            assert spec.variables[0]["dec_id"] == f"{sample_bc}.DEC.1"
-
-    def test_generate_duplicate_is_rejected(self, client, app, sample_bc):
-        self._add_decs(app, sample_bc)
-        client.post(f"/specializations/generate/{sample_bc}", data={"domain": "SDTM"})
-        resp = client.post(f"/specializations/generate/{sample_bc}", data={"domain": "SDTM"})
-        assert resp.status_code == 302
-        with app.app_context():
-            assert DatasetSpecialization.query.count() == 1
-
-    def test_generate_unknown_bc_404(self, client):
-        resp = client.post("/specializations/generate/NOPE", data={"domain": "SDTM"})
-        assert resp.status_code == 404
-
-    def test_generate_writes_audit_log(self, client, app, sample_bc):
-        self._add_decs(app, sample_bc)
-        client.post(f"/specializations/generate/{sample_bc}", data={"domain": "SDTM"})
-        with app.app_context():
-            log = AuditLog.query.filter_by(entity_type="DatasetSpecialization", entity_id=f"{sample_bc}.SDTM", action="created").first()
-            assert log is not None
-
-
-class TestGenerateFromDec:
-    def test_returns_variables_json(self, client, app, sample_bc):
-        with app.app_context():
-            db.session.add(DataElementConcept(dec_id="D1", bc_id=sample_bc, dec_label="Result", data_type="decimal", sort_order=0))
-            db.session.commit()
-        resp = client.post("/specializations/generate-from-dec", json={"bc_id": sample_bc})
+    def test_index_has_no_generate_button(self, client):
+        patcher, _ = _patch_client()
+        with patcher:
+            resp = client.get("/specializations/")
         assert resp.status_code == 200
-        payload = resp.get_json()
-        assert payload["variables"][0]["sdtm_variable"] == "Result"
-        assert payload["variables"][0]["dec_id"] == "D1"
+        html = resp.get_data(as_text=True)
+        assert "generate-from-dec-btn" not in html
+        assert "Generate from DEC Templates" not in html
 
-    def test_missing_bc_id_returns_400(self, client):
-        resp = client.post("/specializations/generate-from-dec", json={})
-        assert resp.status_code == 400
+    def test_generate_from_dec_endpoint_removed(self, client):
+        resp = client.post("/specializations/generate-from-dec", json={"bc_id": "X"})
+        assert resp.status_code in (404, 405)
+
+    def test_generate_endpoint_removed(self, client, sample_bc):
+        resp = client.post(f"/specializations/generate/{sample_bc}", data={"domain": "SDTM"})
+        assert resp.status_code in (404, 405)
 
 
 class TestCreateWithLibraryOnlyBc:
