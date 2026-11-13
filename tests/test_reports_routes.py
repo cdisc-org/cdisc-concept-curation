@@ -6,7 +6,10 @@ from unittest.mock import MagicMock, patch
 def _client_mock():
     c = MagicMock()
     c.get_bc_packages.return_value = [{"href": "/mdr/bc/packages/2023-02-13/biomedicalconcepts", "title": "t"}, {"href": "/mdr/bc/packages/2024-05-01/biomedicalconcepts", "title": "t"}]
-    c.get_spec_packages.return_value = [{"href": "/mdr/specializations/sdtm/packages/2024-05-01/datasetspecializations", "title": "t"}]
+    c.get_spec_packages.return_value = [
+        {"href": "/mdr/specializations/sdtm/packages/2023-02-13/datasetspecializations", "title": "t"},
+        {"href": "/mdr/specializations/sdtm/packages/2024-05-01/datasetspecializations", "title": "t"},
+    ]
     c.get_package_bcs.side_effect = lambda d: {
         "2023-02-13": [{"href": "/p/C1", "title": "One"}, {"href": "/p/C2", "title": "Two"}],
         "2024-05-01": [{"href": "/p/C2", "title": "Two"}, {"href": "/p/C3", "title": "Three"}],
@@ -208,3 +211,43 @@ def test_comparison_page_spec_rows_have_expand_buttons(client):
     with _patch():
         html = client.get("/reports/comparison?a=2023-02-13&b=2024-05-01").get_data(as_text=True)
     assert "kind=spec" in html and "diff-toggle" in html
+
+
+def test_comparison_shows_fetch_errors_and_does_not_diff_failed_side(client):
+    c = _client_mock()
+    c.get_package_bcs.side_effect = lambda d: [{"error": "timeout talking to Library"}] if d == "2024-05-01" else [{"href": "/p/C1", "title": "One"}]
+    with patch("routes.reports.CDISCApiClient", return_value=c):
+        html = client.get("/reports/comparison?a=2023-02-13&b=2024-05-01").get_data(as_text=True)
+    assert "timeout talking to Library" in html
+    assert "Removed since" not in html.split("SDTM Dataset Specializations")[0]  # BC section not diffed against an empty list
+    assert "Could not compare" in html
+
+
+def test_comparison_explains_kind_missing_from_one_package(client):
+    c = _client_mock()
+    c.get_spec_packages.return_value = [{"href": "/mdr/specializations/sdtm/packages/2024-05-01/datasetspecializations", "title": "t"}]
+    with patch("routes.reports.CDISCApiClient", return_value=c):
+        html = client.get("/reports/comparison?a=2023-02-13&b=2024-05-01").get_data(as_text=True)
+    assert "no sdtm specialization package for 2023-02-13" in html.lower()
+    assert "2023-02-13" not in [call.args[0] for call in c.get_package_specs.call_args_list]  # never requests the missing package
+
+
+def test_bc_only_package_page_has_no_error_banner(client):
+    c = _client_mock()
+    c.get_spec_packages.return_value = []
+    with patch("routes.reports.CDISCApiClient", return_value=c):
+        html = client.get("/reports/packages/2023-02-13").get_data(as_text=True)
+    c.get_package_specs.assert_not_called()
+    assert "CDISC Library error" not in html
+    assert "no sdtm" in html.lower()
+
+
+def test_unknown_package_date_is_404(client):
+    with _patch():
+        assert client.get("/reports/packages/1999-01-01").status_code == 404
+
+
+def test_dot_segment_ids_are_rejected(client):
+    with _patch():
+        assert client.get("/reports/comparison/diff?kind=bc&id=..&a=2023-02-13&b=2024-05-01").status_code == 400
+        assert client.get("/reports/packages/2023-02-13/bc/..").status_code == 404

@@ -28,6 +28,8 @@ def packages():
 def package_detail(date):
     _require_date(date)
     contents = ps.package_contents(CDISCApiClient(), date)
+    if not contents["bcs_available"] and not contents["specs_available"]:
+        abort(404)
     return render_template("reports_package_detail.html", date=date, **contents)
 
 

@@ -8,7 +8,7 @@ import json
 import re
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-_ID_RE = re.compile(r"^[A-Za-z0-9_.\-]+$")
+_ID_RE = re.compile(r"^(?!\.+$)[A-Za-z0-9_.\-]+$")  # rejects dot-only ids ("." / "..")
 _PKG_DATE_RE = re.compile(r"/packages/(\d{4}-\d{2}-\d{2})(?:/|$)")
 
 
@@ -62,10 +62,38 @@ def _items(links):
     return items, errors
 
 
+_KIND_LABELS = {"bcs": "biomedical concept", "specs": "SDTM specialization"}
+
+
+def _availability(client, date):
+    """(has_bc, has_spec) for ``date`` from the package lists.
+
+    If a package list itself failed to load we can't tell, so assume both
+    exist and let the per-kind fetches report their own errors.
+    """
+    packages, errors = list_packages(client, with_errors=True)
+    if errors:
+        return True, True
+    match = next((p for p in packages if p["date"] == date), None)
+    return (match["has_bc"], match["has_spec"]) if match else (False, False)
+
+
 def package_contents(client, date):
-    bcs, bc_errors = _items(client.get_package_bcs(date))
-    specs, spec_errors = _items(client.get_package_specs(date))
-    return {"bcs": bcs, "specs": specs, "errors": bc_errors + spec_errors}
+    """Contents of one package, fetching only the kinds it actually has.
+
+    Returns {bcs, specs, errors, bcs_available, specs_available,
+    bcs_failed, specs_failed}. A kind that doesn't exist for the date is
+    "unavailable" (not an error); a kind whose fetch failed is "failed".
+    """
+    has_bc, has_spec = _availability(client, date)
+    out = {"errors": []}
+    for key, available, fetch in (("bcs", has_bc, client.get_package_bcs), ("specs", has_spec, client.get_package_specs)):
+        items, errors = _items(fetch(date)) if available else ([], [])
+        out[key] = items
+        out[f"{key}_available"] = available
+        out[f"{key}_failed"] = bool(errors)
+        out["errors"].extend(errors)
+    return out
 
 
 def _compare_items(a_items, b_items):
@@ -75,21 +103,42 @@ def _compare_items(a_items, b_items):
         "removed": [i for i in a_items if i["id"] not in b_ids],
         "added": [i for i in b_items if i["id"] not in a_ids],
         "common": [i for i in b_items if i["id"] in a_ids],
+        "skipped": None,
     }
+
+
+def _skipped(message):
+    return {"removed": [], "added": [], "common": [], "skipped": message}
+
+
+def _compare_kind(key, a, b, date_a, date_b):
+    """Compare one kind across two packages, or explain why we can't.
+
+    Never diffs against a list that is missing or failed to load, since
+    that would report every item as Added/Removed.
+    """
+    label = _KIND_LABELS[key]
+    for date, side in ((date_a, a), (date_b, b)):
+        if not side[f"{key}_available"]:
+            return _skipped(f"Could not compare: there is no {label} package for {date}.")
+        if side[f"{key}_failed"]:
+            return _skipped(f"Could not compare: the {label} list for {date} failed to load (see the error above).")
+    return _compare_items(a[key], b[key])
 
 
 def compare_packages(client, date_a, date_b):
     """Compare package ``date_a`` (older/base) with ``date_b``.
 
     Returns {"bcs": {...}, "specs": {...}, "errors": [...]} where each of
-    bcs/specs has added / removed / common item lists. Field-level changes
-    for common items are computed lazily via ``diff_items``.
+    bcs/specs has added / removed / common item lists and a ``skipped``
+    message (None when the comparison ran). Field-level changes for common
+    items are computed lazily via ``diff_items``.
     """
     a = package_contents(client, date_a)
     b = package_contents(client, date_b)
     return {
-        "bcs": _compare_items(a["bcs"], b["bcs"]),
-        "specs": _compare_items(a["specs"], b["specs"]),
+        "bcs": _compare_kind("bcs", a, b, date_a, date_b),
+        "specs": _compare_kind("specs", a, b, date_a, date_b),
         "errors": a["errors"] + b["errors"],
     }
 

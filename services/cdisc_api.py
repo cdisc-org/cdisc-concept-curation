@@ -127,17 +127,28 @@ class CDISCApiClient:
 
     # ── Release packages (BC / SDTM dataset specialization) ────────────
 
+    def _cached_or_error(self, cache_name, fetch, on_error):
+        """Run ``fetch`` through the shared stale-tolerant cache.
+
+        ``fetch`` must RAISE on failure so ``cached()`` can fall back to a
+        stale entry; only if there is no usable stale data does the error
+        surface here, where it becomes an error marker that is returned to
+        the caller but never stored in the cache.
+        """
+        try:
+            return _cached(self._cache_key(cache_name), fetch)
+        except (requests.RequestException, ValueError) as e:
+            logger.error("CDISC Library fetch failed for %s: %s", cache_name, e)
+            return on_error(str(e))
+
     def _list_links(self, cache_name, path, link_key):
         def _fetch():
-            try:
-                data = self._get(path)
-                links = data.get("_links", {}).get(link_key, [])
-                return links if isinstance(links, list) else []
-            except (requests.RequestException, ValueError) as e:
-                logger.error("CDISC Library fetch failed for %s: %s", path, e)
-                return [{"error": str(e)}]
+            links = self._get(path).get("_links", {}).get(link_key, [])
+            if isinstance(links, dict):  # domain-keyed (sdtm/cdash/...) shape
+                return [item for v in links.values() if isinstance(v, list) for item in v]
+            return links if isinstance(links, list) else []
 
-        return _cached(self._cache_key(cache_name), _fetch)
+        return self._cached_or_error(cache_name, _fetch, lambda msg: [{"error": msg}])
 
     def get_bc_packages(self):
         """List released BC packages: [{href, title, type}, ...]."""
@@ -156,18 +167,7 @@ class CDISCApiClient:
         return self._list_links(f"spec_package:{date}", f"/mdr/specializations/sdtm/packages/{date}/datasetspecializations", "datasetSpecializations")
 
     def _get_detail(self, cache_name, path):
-        def _fetch():
-            try:
-                return self._get(path)
-            except (requests.RequestException, ValueError) as e:
-                logger.error("CDISC Library fetch failed for %s: %s", path, e)
-                return {"error": str(e)}
-
-        key = self._cache_key(cache_name)
-        result = _cached(key, _fetch)
-        if isinstance(result, dict) and "error" in result:
-            _cache.pop(key, None)  # don't pin a transient failure for the TTL
-        return result
+        return self._cached_or_error(cache_name, lambda: self._get(path), lambda msg: {"error": msg})
 
     def get_package_bc(self, date, concept_id):
         """Fetch one BC as it appears in the package effective on ``date``."""

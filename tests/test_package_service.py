@@ -36,7 +36,12 @@ class TestHelpers:
         assert not ps.is_valid_date("../etc")
         assert ps.is_valid_item_id("C105585")
         assert ps.is_valid_item_id("AG_MEALTOLERANCE")
+        assert ps.is_valid_item_id("A.B-1")
         assert not ps.is_valid_item_id("a/b")
+
+    def test_dot_only_ids_are_rejected(self):
+        for bad in (".", "..", "..."):
+            assert not ps.is_valid_item_id(bad)
 
 
 class TestListPackages:
@@ -81,23 +86,78 @@ class TestContents:
         assert out["bcs"] == [] and out["errors"] == ["bc down"]
 
 
+class TestAvailability:
+    def test_contents_fetch_only_kinds_the_package_has(self):
+        c = _client()  # 2024-05-01 is BC-only, 2025-01-01 is spec-only
+        c.get_package_bcs.return_value = [{"href": "/p/C1", "title": "One"}]
+        out = ps.package_contents(c, "2024-05-01")
+        c.get_package_specs.assert_not_called()
+        assert (out["bcs_available"], out["specs_available"]) == (True, False)
+        assert out["errors"] == [] and out["bcs"] == [{"id": "C1", "title": "One"}] and out["specs"] == []
+
+    def test_spec_only_package_does_not_fetch_bcs(self):
+        c = _client()
+        c.get_package_specs.return_value = []
+        out = ps.package_contents(c, "2025-01-01")
+        c.get_package_bcs.assert_not_called()
+        assert (out["bcs_available"], out["specs_available"]) == (False, True)
+
+    def test_unknown_date_has_nothing_available(self):
+        out = ps.package_contents(_client(), "1999-01-01")
+        assert (out["bcs_available"], out["specs_available"]) == (False, False)
+
+    def test_package_list_failure_assumes_both_available(self):
+        c = _client()
+        c.get_bc_packages.return_value = [{"error": "boom"}]
+        c.get_spec_packages.return_value = [{"error": "boom"}]
+        c.get_package_bcs.return_value = []
+        c.get_package_specs.return_value = []
+        out = ps.package_contents(c, "2024-05-01")
+        assert (out["bcs_available"], out["specs_available"]) == (True, True)
+
+    def test_failed_fetch_is_flagged(self):
+        c = _client()
+        c.get_package_bcs.return_value = [{"error": "bc down"}]
+        c.get_package_specs.return_value = [{"href": "/x/S1", "title": "S"}]
+        out = ps.package_contents(c, "2023-02-13")
+        assert out["bcs_failed"] and not out["specs_failed"]
+
+
+def _cmp_client(bc_dates, spec_dates):
+    c = MagicMock()
+    c.get_bc_packages.return_value = [{"href": f"/mdr/bc/packages/{d}/biomedicalconcepts"} for d in bc_dates]
+    c.get_spec_packages.return_value = [{"href": f"/mdr/specializations/sdtm/packages/{d}/datasetspecializations"} for d in spec_dates]
+    c.get_package_bcs.side_effect = lambda d: {
+        "2023-01-01": [{"href": "/p/C1", "title": "One"}, {"href": "/p/C2", "title": "Two"}],
+        "2024-01-01": [{"href": "/p/C2", "title": "Two"}, {"href": "/p/C3", "title": "Three"}],
+    }[d]
+    c.get_package_specs.return_value = []
+    return c
+
+
 class TestCompare:
     def test_added_removed_common(self):
-        c = _client()
-
-        def bcs(date):
-            return {
-                "A": [{"href": "/p/C1", "title": "One"}, {"href": "/p/C2", "title": "Two"}],
-                "B": [{"href": "/p/C2", "title": "Two"}, {"href": "/p/C3", "title": "Three"}],
-            }[date]
-
-        c.get_package_bcs.side_effect = bcs
-        c.get_package_specs.return_value = []
-        out = ps.compare_packages(c, "A", "B")
+        out = ps.compare_packages(_cmp_client(["2023-01-01", "2024-01-01"], ["2023-01-01", "2024-01-01"]), "2023-01-01", "2024-01-01")
         assert out["bcs"]["removed"] == [{"id": "C1", "title": "One"}]
         assert out["bcs"]["added"] == [{"id": "C3", "title": "Three"}]
         assert out["bcs"]["common"] == [{"id": "C2", "title": "Two"}]
-        assert out["specs"] == {"added": [], "removed": [], "common": []}
+        assert out["bcs"]["skipped"] is None
+        assert out["specs"] == {"added": [], "removed": [], "common": [], "skipped": None}
+
+    def test_kind_missing_on_one_side_is_skipped_not_diffed_as_empty(self):
+        c = _cmp_client(["2023-01-01", "2024-01-01"], ["2024-01-01"])
+        c.get_package_specs.return_value = [{"href": "/p/S1", "title": "Spec"}]
+        out = ps.compare_packages(c, "2023-01-01", "2024-01-01")
+        assert out["specs"]["added"] == [] and out["specs"]["removed"] == []
+        assert "2023-01-01" in out["specs"]["skipped"]
+        assert out["bcs"]["skipped"] is None
+
+    def test_failed_fetch_skips_that_kind_and_reports_error(self):
+        c = _cmp_client(["2023-01-01", "2024-01-01"], ["2023-01-01", "2024-01-01"])
+        c.get_package_bcs.side_effect = lambda d: [{"error": "timeout"}] if d == "2024-01-01" else [{"href": "/p/C1", "title": "One"}]
+        out = ps.compare_packages(c, "2023-01-01", "2024-01-01")
+        assert out["bcs"]["removed"] == [] and out["bcs"]["added"] == [] and out["bcs"]["skipped"]
+        assert "timeout" in out["errors"]
 
 
 class TestFlattenAndDiff:

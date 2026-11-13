@@ -16,10 +16,14 @@
 
 {% for e in errors %}<div class="alert alert-warning">CDISC Library error: {{ e }}</div>{% endfor %}
 
-{% for heading, items, kind in (('Biomedical Concepts', bcs, 'bc'), ('SDTM Dataset Specializations', specs, 'spec')) %}
+{% for heading, items, kind, available, failed in (('Biomedical Concepts', bcs, 'bc', bcs_available, bcs_failed), ('SDTM Dataset Specializations', specs, 'spec', specs_available, specs_failed)) %}
 <div class="bc-card mb-3">
   <h2 class="form-section-title">{{ heading }} ({{ items | length }})</h2>
-  {% if items %}
+  {% if not available %}
+  <p class="text-muted mb-0">No {{ 'biomedical concept' if kind == 'bc' else 'SDTM specialization' }} package was released on this date.</p>
+  {% elif failed %}
+  <p class="text-muted mb-0">Could not load this list (see the error above).</p>
+  {% elif items %}
   <table class="bc-table" aria-label="{{ heading }} in package {{ date }}">
     <thead><tr><th scope="col">ID</th><th scope="col">Title</th></tr></thead>
     <tbody>
