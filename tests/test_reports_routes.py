@@ -25,6 +25,13 @@ def _client_mock():
         ],
         "AE": [],
     }.get(d, [])
+    c.get_bc_categories.return_value = [{"name": "Lipid Measurements"}, {"name": "laboratory Procedures"}, {"name": "Empty Cat"}]
+    c.get_category_bcs.side_effect = lambda n: {
+        "Lipid Measurements": [
+            {"href": "/mdr/bc/biomedicalconcepts/C64812", "title": "Triglyceride Measurement"},
+            {"href": "/mdr/bc/biomedicalconcepts/C105586", "title": "Cholesterol Measurement"},
+        ],
+    }.get(n, [])
     return c
 
 
@@ -335,3 +342,76 @@ def test_domain_specs_breadcrumb(client):
         crumb = _breadcrumb(client.get("/reports/domains/VS").get_data(as_text=True))
     assert 'href="/reports/domains"' in crumb
     assert crumb.index("Reports") < crumb.index("SDTM Domains") < crumb.index("VS")
+
+
+# ── BC Categories (#3) ──────────────────────────────────────────────────
+
+
+def test_sidebar_has_bc_categories_item(client):
+    with _patch():
+        html = client.get("/reports/packages").get_data(as_text=True)
+    assert "BC Categories" in html and 'href="/reports/categories"' in html
+
+
+def test_categories_list_alphabetical_and_linked(client):
+    with _patch():
+        html = client.get("/reports/categories").get_data(as_text=True)
+    # case-insensitive ascending: "Empty Cat" < "laboratory Procedures" < "Lipid Measurements"
+    assert html.index(">Empty Cat<") < html.index(">laboratory Procedures<") < html.index(">Lipid Measurements<")
+    assert 'href="/reports/categories/Lipid%20Measurements"' in html
+
+
+def test_categories_nav_item_is_active(client):
+    with _patch():
+        html = client.get("/reports/categories/Lipid%20Measurements").get_data(as_text=True)
+    nav = html[html.index('href="/reports/categories"') :]
+    assert "active" in nav[: nav.index("</a>")]
+
+
+def test_categories_api_error_shows_banner_not_500(client):
+    c = _client_mock()
+    c.get_bc_categories.return_value = [{"error": "boom"}]
+    with patch("routes.reports.CDISCApiClient", return_value=c):
+        resp = client.get("/reports/categories")
+    assert resp.status_code == 200 and "boom" in resp.get_data(as_text=True)
+
+
+def test_category_bcs_sorted_and_link_to_library_detail(client):
+    with _patch():
+        html = client.get("/reports/categories/Lipid%20Measurements").get_data(as_text=True)
+    assert html.index("Cholesterol Measurement") < html.index("Triglyceride Measurement")
+    assert 'href="/bc/library/C64812"' in html and 'href="/bc/library/C105586"' in html
+
+
+def test_category_with_no_bcs_shows_empty_state(client):
+    with _patch():
+        resp = client.get("/reports/categories/Empty%20Cat")
+    assert resp.status_code == 200 and "No biomedical concepts" in resp.get_data(as_text=True)
+
+
+def test_unknown_category_is_404(client):
+    with _patch():
+        assert client.get("/reports/categories/Nope").status_code == 404
+
+
+def test_category_detail_with_failed_category_list_redirects_with_error(client):
+    c = _client_mock()
+    c.get_bc_categories.return_value = [{"error": "boom"}]
+    with patch("routes.reports.CDISCApiClient", return_value=c):
+        resp = client.get("/reports/categories/Lipid%20Measurements")
+    assert resp.status_code == 302 and resp.headers["Location"].endswith("/reports/categories")
+
+
+def test_category_bcs_api_error_is_shown(client):
+    c = _client_mock()
+    c.get_category_bcs.side_effect = lambda n: [{"error": "bcboom"}]
+    with patch("routes.reports.CDISCApiClient", return_value=c):
+        html = client.get("/reports/categories/Lipid%20Measurements").get_data(as_text=True)
+    assert "bcboom" in html
+
+
+def test_category_breadcrumb(client):
+    with _patch():
+        crumb = _breadcrumb(client.get("/reports/categories/Lipid%20Measurements").get_data(as_text=True))
+    assert 'href="/reports/categories"' in crumb
+    assert crumb.index("Reports") < crumb.index("BC Categories") < crumb.index("Lipid Measurements")

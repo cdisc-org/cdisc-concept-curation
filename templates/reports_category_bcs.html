@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}BC Category {{ category }} — CDISC BC Curation{% endblock %}
+{% block page_title %}BC Category {{ category }}{% endblock %}
+
+{% block content %}
+{% include '_reports_breadcrumb.html' %}
+<div class="page-header">
+  <h1 class="page-title">Biomedical Concepts — {{ category }}</h1>
+</div>
+
+{% for e in errors %}<div class="alert alert-warning">CDISC Library error: {{ e }}</div>{% endfor %}
+
+<div class="bc-card">
+  {% if bcs %}
+  <table class="bc-table" aria-label="Biomedical concepts in category {{ category }}">
+    <thead>
+      <tr>
+        <th scope="col">Biomedical Concept</th>
+        <th scope="col">Concept ID</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for b in bcs %}
+      <tr>
+        <td><a href="{{ url_for('bc.library_detail', concept_id=b.id) }}">{{ b.title or b.id }}</a></td>
+        <td>{{ b.id }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% elif not errors %}
+  <p class="text-muted mb-0">No biomedical concepts available for category {{ category }}.</p>
+  {% endif %}
+</div>
+{% endblock %}

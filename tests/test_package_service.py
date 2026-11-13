@@ -335,3 +335,30 @@ class TestDomains:
         c = _client()
         c.get_spec_packages.return_value = [{"error": "boom"}]
         assert ps.latest_spec_package_date(c) == (None, ["boom"])
+
+
+class TestCategories:
+    def test_list_categories_sorted_case_insensitive_and_deduped(self):
+        c = MagicMock()
+        c.get_bc_categories.return_value = [{"name": "lipids"}, {"name": "Zeta"}, {"name": "Alpha"}, {"name": "Alpha"}]
+        assert ps.list_categories(c) == ["Alpha", "lipids", "Zeta"]
+
+    def test_list_categories_with_errors(self):
+        c = MagicMock()
+        c.get_bc_categories.return_value = [{"error": "boom"}]
+        assert ps.list_categories(c, with_errors=True) == ([], ["boom"])
+
+    def test_category_bcs_sorted_by_title_with_ids(self):
+        c = MagicMock()
+        c.get_category_bcs.return_value = [
+            {"href": "/mdr/bc/biomedicalconcepts/C2", "title": "Zinc"},
+            {"href": "/mdr/bc/biomedicalconcepts/C1", "title": "amylase"},
+        ]
+        items, errors = ps.category_bcs(c, "Lab")
+        c.get_category_bcs.assert_called_once_with("Lab")
+        assert items == [{"id": "C1", "title": "amylase"}, {"id": "C2", "title": "Zinc"}] and errors == []
+
+    def test_category_bcs_surfaces_errors(self):
+        c = MagicMock()
+        c.get_category_bcs.return_value = [{"error": "boom"}]
+        assert ps.category_bcs(c, "Lab") == ([], ["boom"])

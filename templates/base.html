@@ -102,6 +102,12 @@
         <i class="bi bi-diagram-3 nav-icon" aria-hidden="true"></i>
         SDTM Domains
       </a>
+      <a href="{{ url_for('reports.categories') }}"
+         class="nav-item {% if request.endpoint in ('reports.categories', 'reports.category_detail') %}active{% endif %}"
+         aria-current="{% if request.endpoint in ('reports.categories', 'reports.category_detail') %}page{% endif %}">
+        <i class="bi bi-tags nav-icon" aria-hidden="true"></i>
+        BC Categories
+      </a>
     </div>
 
     <div class="sidebar-footer">

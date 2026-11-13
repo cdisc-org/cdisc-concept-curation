@@ -99,3 +99,22 @@ def domain_detail(domain):
     specs, spec_errors = ps.domain_specs(client, domain)
     package_date, package_errors = ps.latest_spec_package_date(client)
     return render_template("reports_domain_specs.html", domain=domain, specs=specs, errors=spec_errors + package_errors, package_date=package_date)
+
+
+@bp.route("/categories")
+def categories():
+    names, errors = ps.list_categories(CDISCApiClient(), with_errors=True)
+    return render_template("reports_categories.html", categories=names, errors=errors)
+
+
+@bp.route("/categories/<path:category>")
+def category_detail(category):
+    client = CDISCApiClient()
+    names, errors = ps.list_categories(client, with_errors=True)
+    if category not in names:
+        if errors:  # can't tell whether the category exists; surface the failure instead of a misleading 404
+            flash(f'Could not load BC categories: {"; ".join(errors)}', "danger")
+            return redirect(url_for("reports.categories"))
+        abort(404)
+    bcs, bc_errors = ps.category_bcs(client, category)
+    return render_template("reports_category_bcs.html", category=category, bcs=bcs, errors=bc_errors)

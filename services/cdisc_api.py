@@ -181,6 +181,20 @@ class CDISCApiClient:
         """List the SDTM dataset specializations for one domain as {href, title} links."""
         return self._list_links(f"domain_specs:{domain}", f"/mdr/specializations/sdtm/datasetspecializations?domain={quote(domain, safe='')}", "datasetSpecializations")
 
+    def get_bc_categories(self):
+        """List the BC categories: [{name}, ...] (or [{"error": msg}]).
+        Order is as returned by the Library."""
+
+        def _fetch():
+            cats = self._get("/mdr/bc/categories").get("_links", {}).get("categories", [])
+            return [{"name": c["name"]} for c in cats if c.get("name")]
+
+        return self._cached_or_error("bc_categories", _fetch, lambda msg: [{"error": msg}])
+
+    def get_category_bcs(self, category):
+        """List the BCs in one category as {href, title} links."""
+        return self._list_links(f"category_bcs:{category}", f"/mdr/bc/biomedicalconcepts?category={quote(category, safe='')}", "biomedicalConcepts")
+
     def _get_detail(self, cache_name, path):
         return self._cached_or_error(cache_name, lambda: self._get(path), lambda msg: {"error": msg})
 
