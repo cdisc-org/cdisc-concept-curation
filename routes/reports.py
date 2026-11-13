@@ -79,3 +79,23 @@ def comparison_diff():
     error = a.get("error") or b.get("error")
     diffs = [] if error else ps.diff_items(a, b)
     return render_template("reports_diff_fragment.html", diffs=diffs, error=error, a=date_a, b=date_b)
+
+
+@bp.route("/domains")
+def domains():
+    names, errors = ps.list_domains(CDISCApiClient(), with_errors=True)
+    return render_template("reports_domains.html", domains=names, errors=errors)
+
+
+@bp.route("/domains/<domain>")
+def domain_detail(domain):
+    client = CDISCApiClient()
+    names, errors = ps.list_domains(client, with_errors=True)
+    if domain not in names:
+        if errors:  # can't tell whether the domain exists; surface the failure instead of a misleading 404
+            flash(f'Could not load SDTM domains: {"; ".join(errors)}', "danger")
+            return redirect(url_for("reports.domains"))
+        abort(404)
+    specs, spec_errors = ps.domain_specs(client, domain)
+    package_date, package_errors = ps.latest_spec_package_date(client)
+    return render_template("reports_domain_specs.html", domain=domain, specs=specs, errors=spec_errors + package_errors, package_date=package_date)

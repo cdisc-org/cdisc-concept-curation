@@ -294,3 +294,44 @@ class TestWholeFieldAddedOrRemoved:
         rows = {r["field"]: r for r in ps.diff_items(a, b)}
         assert rows[f"variables{SEP}V1{SEP}relationship.subject"]["change"] == "Added"
         assert not any(r["b"].startswith("{") for r in rows.values())
+
+
+class TestDomains:
+    def test_list_domains_sorted_ascending_case_insensitive(self):
+        c = MagicMock()
+        c.get_sdtm_spec_domains.return_value = [{"name": "VS"}, {"name": "ae"}, {"name": "LB"}]
+        assert ps.list_domains(c) == ["ae", "LB", "VS"]
+
+    def test_list_domains_with_errors(self):
+        c = MagicMock()
+        c.get_sdtm_spec_domains.return_value = [{"error": "down"}]
+        assert ps.list_domains(c, with_errors=True) == ([], ["down"])
+
+    def test_domain_specs_sorted_by_title(self):
+        c = MagicMock()
+        c.get_domain_specs.return_value = [
+            {"href": "/mdr/specializations/sdtm/datasetspecializations/SYSBP", "title": "Systolic Blood Pressure"},
+            {"href": "/mdr/specializations/sdtm/datasetspecializations/BMI", "title": "Body Mass Index"},
+        ]
+        items, errors = ps.domain_specs(c, "VS")
+        assert items == [{"id": "BMI", "title": "Body Mass Index"}, {"id": "SYSBP", "title": "Systolic Blood Pressure"}]
+        assert errors == []
+        c.get_domain_specs.assert_called_once_with("VS")
+
+    def test_domain_specs_errors(self):
+        c = MagicMock()
+        c.get_domain_specs.return_value = [{"error": "down"}]
+        assert ps.domain_specs(c, "VS") == ([], ["down"])
+
+    def test_latest_spec_package_date_picks_newest_with_specs(self):
+        assert ps.latest_spec_package_date(_client()) == ("2025-01-01", [])
+
+    def test_latest_spec_package_date_none_without_spec_packages(self):
+        c = _client()
+        c.get_spec_packages.return_value = []
+        assert ps.latest_spec_package_date(c) == (None, [])
+
+    def test_latest_spec_package_date_surfaces_list_errors(self):
+        c = _client()
+        c.get_spec_packages.return_value = [{"error": "boom"}]
+        assert ps.latest_spec_package_date(c) == (None, ["boom"])

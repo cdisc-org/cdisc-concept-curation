@@ -62,6 +62,32 @@ def _items(links):
     return items, errors
 
 
+def list_domains(client, with_errors=False):
+    """SDTM domain names that have specializations, ascending (case-insensitive).
+
+    With ``with_errors`` returns (names, [error messages]).
+    """
+    entries = client.get_sdtm_spec_domains()
+    names = sorted({e["name"] for e in entries if e.get("name") and "error" not in e}, key=str.lower)
+    errors = [e["error"] for e in entries if "error" in e]
+    return (names, errors) if with_errors else names
+
+
+def domain_specs(client, domain):
+    """(items, errors) for the specializations of ``domain``; items are
+    [{id, title}] sorted by title."""
+    return _items(client.get_domain_specs(domain))
+
+
+def latest_spec_package_date(client):
+    """(date, errors): effective date of the newest SDTM specialization package
+    (None if there is none) and any error messages from loading that list, so a
+    failed fetch is never mistaken for "no package"."""
+    good, errors = _split(client.get_spec_packages())
+    dates = [d for d in (package_date(lnk["href"]) for lnk in good) if d]
+    return (max(dates) if dates else None), errors
+
+
 _KIND_LABELS = {"bcs": "biomedical concept", "specs": "SDTM specialization"}
 
 

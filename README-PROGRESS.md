@@ -28,8 +28,20 @@ CDISC Biomedical Concept Curation — a Flask/Jinja web application for curating
 | Test Suite                 | 🚧 In Progress | BC routes, LOINC, NCIt coverage added                                |
 | NCIt/BC Alignment          | ✅ Complete    | Background job runs the `cdisc-bc-ncit-alignment` submodule's 2-stage pipeline, `services/alignment_runner.py` |
 | Release Package Reports    | ✅ Complete    | Reports > Packages and Comparison (BC + SDTM specialization release packages), `routes/reports.py`, `services/package_service.py` |
+| SDTM Domains Report        | ✅ Complete    | Reports > SDTM Domains: domains with specializations → specializations per domain → latest-package spec detail |
 
 ## Daily Changelog
+
+### 2026-11-13
+
+#### Added Reports > SDTM Domains (Issue #106)
+
+- New `SDTM Domains` entry in the `REPORTS` sidebar section (`templates/base.html`).
+- `SDTM Domains` (`/reports/domains`) lists, in ascending order, every SDTM domain that has dataset specializations in the CDISC Library; selecting a domain (`/reports/domains/<domain>`) lists its specializations by title; selecting a specialization opens the existing Reports spec detail page for the **latest** SDTM specialization package. An unknown domain returns 404; if the domain list fails to load, the page redirects with an error instead of a misleading 404; if the spec-package list fails to load the error is shown (not reported as "no package"); if it loads and has no spec package, rows render as plain text with a notice.
+- `services/cdisc_api.py` — new `get_sdtm_spec_domains()` (`/mdr/specializations/sdtm/domains`) and `get_domain_specs(domain)` (`/mdr/specializations/sdtm/datasetspecializations?domain=XX`) using the shared stale-tolerant cache; error markers are never cached.
+- `services/package_service.py` — `list_domains`, `domain_specs`, `latest_spec_package_date`; `routes/reports.py` — `domains` and `domain_detail`; new `reports_domains.html` and `reports_domain_specs.html`; `_reports_breadcrumb.html` extended (Reports › SDTM Domains › VS).
+- No schema change, no Alembic revision. Related: #100 (DSS "pull SDTM variables for target domain") is separate work needing SDTMIG variable metadata.
+- Tests written first: `tests/test_cdisc_api_packages.py`, `tests/test_package_service.py`, `tests/test_reports_routes.py`; 611 tests passing, lint clean ✅
 
 ### 2026-11-12
 

@@ -17,6 +17,14 @@ def _client_mock():
     c.get_package_specs.return_value = [{"href": "/p/SPEC1", "title": "Spec One"}]
     c.get_package_bc.side_effect = lambda d, i: {"conceptId": i, "definition": f"def {d}", "shortName": "SN"}
     c.get_package_spec.return_value = {"datasetSpecializationId": "SPEC1", "domain": "VS"}
+    c.get_sdtm_spec_domains.return_value = [{"name": "VS"}, {"name": "AE"}, {"name": "LB"}]
+    c.get_domain_specs.side_effect = lambda d: {
+        "VS": [
+            {"href": "/mdr/specializations/sdtm/datasetspecializations/SYSBP", "title": "Systolic Blood Pressure"},
+            {"href": "/mdr/specializations/sdtm/datasetspecializations/BMI", "title": "Body Mass Index"},
+        ],
+        "AE": [],
+    }.get(d, [])
     return c
 
 
@@ -251,3 +259,79 @@ def test_dot_segment_ids_are_rejected(client):
     with _patch():
         assert client.get("/reports/comparison/diff?kind=bc&id=..&a=2023-02-13&b=2024-05-01").status_code == 400
         assert client.get("/reports/packages/2023-02-13/bc/..").status_code == 404
+
+
+# ── SDTM Domains (#106) ────────────────────────────────────────────────
+
+
+def test_sidebar_has_sdtm_domains_item(client):
+    with _patch():
+        html = client.get("/reports/packages").get_data(as_text=True)
+    assert "SDTM Domains" in html and 'href="/reports/domains"' in html
+
+
+def test_domains_list_ascending_and_linked(client):
+    with _patch():
+        html = client.get("/reports/domains").get_data(as_text=True)
+    assert html.index(">AE<") < html.index(">LB<") < html.index(">VS<")
+    assert 'href="/reports/domains/VS"' in html
+
+
+def test_domains_nav_item_is_active(client):
+    with _patch():
+        html = client.get("/reports/domains/VS").get_data(as_text=True)
+    nav = html[html.index('href="/reports/domains"') :]
+    assert "active" in nav[: nav.index("</a>")]
+
+
+def test_domains_api_error_shows_banner_not_500(client):
+    c = _client_mock()
+    c.get_sdtm_spec_domains.return_value = [{"error": "boom"}]
+    with patch("routes.reports.CDISCApiClient", return_value=c):
+        resp = client.get("/reports/domains")
+    assert resp.status_code == 200 and "boom" in resp.get_data(as_text=True)
+
+
+def test_domain_specs_listed_by_title_with_latest_package_links(client):
+    with _patch():
+        html = client.get("/reports/domains/VS").get_data(as_text=True)
+    assert html.index("Body Mass Index") < html.index("Systolic Blood Pressure")
+    # latest spec package in the mock is 2024-05-01
+    assert 'href="/reports/packages/2024-05-01/spec/SYSBP"' in html
+
+
+def test_domain_with_no_specs_shows_empty_state(client):
+    with _patch():
+        resp = client.get("/reports/domains/AE")
+    assert resp.status_code == 200 and "No specializations" in resp.get_data(as_text=True)
+
+
+def test_unknown_domain_is_404(client):
+    with _patch():
+        assert client.get("/reports/domains/ZZ").status_code == 404
+
+
+def test_domain_specs_without_spec_package_are_plain_text_with_notice(client):
+    c = _client_mock()
+    c.get_spec_packages.return_value = []
+    with patch("routes.reports.CDISCApiClient", return_value=c):
+        html = client.get("/reports/domains/VS").get_data(as_text=True)
+    assert "Systolic Blood Pressure" in html and "/spec/SYSBP" not in html
+    assert "No SDTM specialization package" in html
+
+
+def test_domain_specs_package_list_error_is_shown_not_reported_as_missing(client):
+    c = _client_mock()
+    c.get_spec_packages.return_value = [{"error": "boom"}]
+    with patch("routes.reports.CDISCApiClient", return_value=c):
+        html = client.get("/reports/domains/VS").get_data(as_text=True)
+    assert "CDISC Library error: boom" in html
+    assert "No SDTM specialization package" not in html
+    assert "Systolic Blood Pressure" in html and "/spec/SYSBP" not in html
+
+
+def test_domain_specs_breadcrumb(client):
+    with _patch():
+        crumb = _breadcrumb(client.get("/reports/domains/VS").get_data(as_text=True))
+    assert 'href="/reports/domains"' in crumb
+    assert crumb.index("Reports") < crumb.index("SDTM Domains") < crumb.index("VS")
