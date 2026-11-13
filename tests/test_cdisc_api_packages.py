@@ -102,3 +102,39 @@ def test_domain_keyed_spec_links_are_flattened():
     data = {"_links": {"datasetSpecializations": {"sdtm": [{"href": "a"}], "cdash": [{"href": "b"}]}}}
     with patch.object(CDISCApiClient, "_get", return_value=data):
         assert _client().get_package_specs("2023-02-13") == [{"href": "a"}, {"href": "b"}]
+
+
+# ── SDTM specialization domains (#106) ─────────────────────────────────
+
+
+def test_get_sdtm_spec_domains_returns_names():
+    payload = {"domains": [{"name": "LB", "_links": {}}, {"name": "AE", "_links": {}}, {"_links": {}}]}
+    with patch.object(CDISCApiClient, "_get", return_value=payload) as g:
+        out = _client().get_sdtm_spec_domains()
+    g.assert_called_once_with("/mdr/specializations/sdtm/domains")
+    assert out == [{"name": "LB"}, {"name": "AE"}]  # nameless entries are dropped
+
+
+def test_get_sdtm_spec_domains_error_is_marker_and_not_cached():
+    c = _client()
+    with patch.object(CDISCApiClient, "_get", side_effect=requests.RequestException("down")):
+        assert c.get_sdtm_spec_domains() == [{"error": "down"}]
+    with patch.object(CDISCApiClient, "_get", return_value={"domains": [{"name": "VS"}]}):
+        assert c.get_sdtm_spec_domains() == [{"name": "VS"}]
+
+
+def test_get_domain_specs_filters_by_domain():
+    links = [{"href": "/mdr/specializations/sdtm/datasetspecializations/BMI", "title": "Body Mass Index"}]
+    with patch.object(CDISCApiClient, "_get", return_value={"_links": {"datasetSpecializations": links}}) as g:
+        out = _client().get_domain_specs("VS")
+    g.assert_called_once_with("/mdr/specializations/sdtm/datasetspecializations?domain=VS")
+    assert out == links
+
+
+def test_get_domain_specs_caches_per_domain_and_reports_errors():
+    c = _client()
+    with patch.object(CDISCApiClient, "_get", side_effect=[{"_links": {"datasetSpecializations": [{"href": "a"}]}}, {"_links": {"datasetSpecializations": [{"href": "b"}]}}]):
+        assert c.get_domain_specs("VS") == [{"href": "a"}]
+        assert c.get_domain_specs("LB") == [{"href": "b"}]
+    with patch.object(CDISCApiClient, "_get", side_effect=requests.RequestException("down")):
+        assert c.get_domain_specs("AE") == [{"error": "down"}]

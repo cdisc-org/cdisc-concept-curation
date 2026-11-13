@@ -1,6 +1,7 @@
 import hashlib
 import logging
 import os
+from urllib.parse import quote
 
 import requests
 from flask import current_app
@@ -165,6 +166,20 @@ class CDISCApiClient:
     def get_package_specs(self, date):
         """List the SDTM specializations in the package effective on ``date``."""
         return self._list_links(f"spec_package:{date}", f"/mdr/specializations/sdtm/packages/{date}/datasetspecializations", "datasetSpecializations")
+
+    def get_sdtm_spec_domains(self):
+        """List the SDTM domains that have dataset specializations: [{name}, ...]
+        (or [{"error": msg}]). Order is as returned by the Library."""
+
+        def _fetch():
+            data = self._get("/mdr/specializations/sdtm/domains")
+            return [{"name": d["name"]} for d in data.get("domains", []) if d.get("name")]
+
+        return self._cached_or_error("sdtm_spec_domains", _fetch, lambda msg: [{"error": msg}])
+
+    def get_domain_specs(self, domain):
+        """List the SDTM dataset specializations for one domain as {href, title} links."""
+        return self._list_links(f"domain_specs:{domain}", f"/mdr/specializations/sdtm/datasetspecializations?domain={quote(domain, safe='')}", "datasetSpecializations")
 
     def _get_detail(self, cache_name, path):
         return self._cached_or_error(cache_name, lambda: self._get(path), lambda msg: {"error": msg})

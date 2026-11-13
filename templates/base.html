@@ -96,6 +96,12 @@
         <i class="bi bi-arrow-left-right nav-icon" aria-hidden="true"></i>
         Comparison
       </a>
+      <a href="{{ url_for('reports.domains') }}"
+         class="nav-item {% if request.endpoint in ('reports.domains', 'reports.domain_detail') %}active{% endif %}"
+         aria-current="{% if request.endpoint in ('reports.domains', 'reports.domain_detail') %}page{% endif %}">
+        <i class="bi bi-diagram-3 nav-icon" aria-hidden="true"></i>
+        SDTM Domains
+      </a>
     </div>
 
     <div class="sidebar-footer">
