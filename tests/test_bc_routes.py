@@ -862,3 +862,104 @@ class TestLibraryDetail:
             MockLoinc.return_value.search.return_value = [{"error": "timeout"}]
             r = client.get("/bc/library/C64849")
         assert r.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# BC Categories multi-select (#110)
+# ---------------------------------------------------------------------------
+
+_CATS = ["Alpha Cat", "Beta Cat", "Gamma Cat"]
+
+
+def _with_categories(names=_CATS, errors=()):
+    return patch("routes.bc.list_categories", return_value=(list(names), list(errors)))
+
+
+class TestBcCategoriesForm:
+    def test_new_form_renders_checkbox_per_category_in_order(self, client):
+        with _with_categories():
+            html = client.get("/bc/new").get_data(as_text=True)
+        assert html.count('name="bc_categories"') >= 3
+        assert html.index("Alpha Cat") < html.index("Beta Cat") < html.index("Gamma Cat")
+        assert 'name="bc_categories_submitted"' in html
+
+    def test_detail_prechecks_current_categories(self, client, app, sample_bc):
+        with app.app_context():
+            bc = db.session.get(BiomedicalConcept, "C12345")
+            bc.bc_categories = "Beta Cat; Gamma Cat"
+            db.session.commit()
+        with _with_categories():
+            html = client.get("/bc/C12345").get_data(as_text=True)
+        import re
+
+        checked = re.findall(r'<input[^>]*name="bc_categories"[^>]*value="([^"]+)"[^>]*checked', html)
+        assert checked == ["Beta Cat", "Gamma Cat"]
+
+    def test_clone_prechecks_source_categories(self, client, app, sample_bc):
+        with app.app_context():
+            bc = db.session.get(BiomedicalConcept, "C12345")
+            bc.bc_categories = "Alpha Cat"
+            db.session.commit()
+        with _with_categories():
+            html = client.get("/bc/new?clone_from=C12345").get_data(as_text=True)
+        import re
+
+        assert re.findall(r'<input[^>]*name="bc_categories"[^>]*value="([^"]+)"[^>]*checked', html) == ["Alpha Cat"]
+
+    def test_legacy_value_not_in_library_is_kept_and_flagged(self, client, app, sample_bc):
+        with app.app_context():
+            bc = db.session.get(BiomedicalConcept, "C12345")
+            bc.bc_categories = "Alpha Cat; Legacy Thing"
+            db.session.commit()
+        with _with_categories():
+            html = client.get("/bc/C12345").get_data(as_text=True)
+        assert 'value="Legacy Thing"' in html
+        assert "not in Library" in html
+
+    def test_api_error_falls_back_to_text_input_with_warning(self, client, app, sample_bc):
+        with app.app_context():
+            bc = db.session.get(BiomedicalConcept, "C12345")
+            bc.bc_categories = "Alpha Cat; Beta Cat"
+            db.session.commit()
+        with _with_categories(names=[], errors=["boom"]):
+            r = client.get("/bc/C12345")
+        html = r.get_data(as_text=True)
+        assert r.status_code == 200
+        assert 'type="text" id="bc_categories"' in html
+        assert 'value="Alpha Cat; Beta Cat"' in html
+        assert "boom" in html
+
+    def test_create_joins_selected_categories(self, client, app):
+        data = _bc_form()
+        data["bc_categories"] = ["Alpha Cat", "Gamma Cat"]
+        client.post("/bc/", data=data)
+        with app.app_context():
+            assert db.session.get(BiomedicalConcept, "C00001").bc_categories == "Alpha Cat; Gamma Cat"
+
+    def test_edit_updates_categories_when_marker_present(self, client, app, sample_bc):
+        client.post("/bc/C12345/edit", data={"bc_categories_submitted": "1", "bc_categories": ["Beta Cat", "Alpha Cat"]})
+        with app.app_context():
+            assert db.session.get(BiomedicalConcept, "C12345").bc_categories == "Beta Cat; Alpha Cat"
+
+    def test_edit_clears_categories_when_all_unchecked(self, client, app, sample_bc):
+        with app.app_context():
+            bc = db.session.get(BiomedicalConcept, "C12345")
+            bc.bc_categories = "Alpha Cat"
+            db.session.commit()
+        client.post("/bc/C12345/edit", data={"bc_categories_submitted": "1"})
+        with app.app_context():
+            assert db.session.get(BiomedicalConcept, "C12345").bc_categories == ""
+
+    def test_edit_without_marker_keeps_plain_string_value(self, client, app, sample_bc):
+        client.post("/bc/C12345/edit", data={"bc_categories": "Free Text; Other"})
+        with app.app_context():
+            assert db.session.get(BiomedicalConcept, "C12345").bc_categories == "Free Text; Other"
+
+    def test_edit_without_marker_or_field_preserves_categories(self, client, app, sample_bc):
+        with app.app_context():
+            bc = db.session.get(BiomedicalConcept, "C12345")
+            bc.bc_categories = "Alpha Cat"
+            db.session.commit()
+        client.post("/bc/C12345/edit", data={"short_name": "Renamed"})
+        with app.app_context():
+            assert db.session.get(BiomedicalConcept, "C12345").bc_categories == "Alpha Cat"

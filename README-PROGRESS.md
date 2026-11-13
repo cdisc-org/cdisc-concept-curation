@@ -35,6 +35,16 @@ CDISC Biomedical Concept Curation — a Flask/Jinja web application for curating
 
 ### 2026-11-13
 
+#### Added BC Categories multi-select on the BC form (Issue #110)
+
+- `templates/bc_detail.html` — the Classification card's `BC Categories` free-text input is now a dropdown checklist of CDISC Library categories (alphabetical, filter box, "N selected" summary, selected-category badges). Works on new, clone and edit; nothing persists until Save.
+- `routes/bc.py` — `_category_context(bc)` (reuses `package_service.list_categories`) and `_apply_categories(data, form)`; create/edit join ticked boxes into the existing semicolon-separated `bc_categories`. Hidden `bc_categories_submitted` marker distinguishes "all unchecked → clear" from "field absent → preserve" (same pattern as `result_scales`); a plain-string post still works.
+- Existing values the Library doesn't list are kept, ticked and flagged "(not in Library)" so a save can't drop them. If the Library call fails, the form falls back to the text input with a warning (no 500).
+- `static/js/main.js` (`initCategoryPicker`) and `static/css/custom.css` (CDISC Blue badges, scrollable list); brand guidelines applied.
+- `tests/conftest.py` — autouse fixture stubs the category lookup so no test hits the network; 10 new tests in `tests/test_bc_routes.py` (`TestBcCategoriesForm`), written first.
+- No schema change, no Alembic revision.
+- 641 tests passing, lint clean ✅ (not yet verified in a browser)
+
 #### Added Reports > BC Categories (Issue #3)
 
 - New `BC Categories` entry in the `REPORTS` sidebar section (`templates/base.html`).

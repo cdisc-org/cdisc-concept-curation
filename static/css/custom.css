@@ -1137,3 +1137,15 @@ code, .mono {
 .spec-var-card .offcanvas-title { font-size: 15px; font-weight: 700; margin: 0; }
 .spec-var-card-group { border: 0; border-top: 2px solid #D57E00; padding: 8px 0 0; margin: 0 0 14px; }
 .spec-var-card-group legend { float: none; width: auto; padding: 0; margin: 0 0 6px; font-size: 12px; font-weight: 700; color: #553278; }
+
+/* BC Categories multi-select (#110) */
+.bc-category-list {
+  max-height: 14rem;
+  overflow-y: auto;
+}
+.bc-category-badge {
+  background-color: #134678;
+  color: #fff;
+  font-family: Arial, sans-serif;
+  font-weight: 400;
+}
