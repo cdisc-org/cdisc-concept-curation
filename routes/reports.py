@@ -118,3 +118,42 @@ def category_detail(category):
         abort(404)
     bcs, bc_errors = ps.category_bcs(client, category)
     return render_template("reports_category_bcs.html", category=category, bcs=bcs, errors=bc_errors)
+
+
+# ── Lifecycle (#112) ──────────────────────────────────────────────────────
+
+# URL segment -> (package_service kind, page label)
+_LIFECYCLE_KINDS = {"bc": ("bc", "Biomedical Concept"), "sdtm": ("spec", "SDTM Specialization")}
+
+
+def _lifecycle_page(url_kind):
+    kind, label = _LIFECYCLE_KINDS[url_kind]
+    item = request.args.get("id", "").strip()
+    if item and not ps.is_valid_item_id(item):
+        abort(400)
+    client = CDISCApiClient()
+    items, errors = ps.lifecycle_items(client, kind)
+    result = None
+    if item:
+        result = ps.lifecycle(client, kind, item)
+        errors = errors + [e for e in result["errors"] if e not in errors]
+    return render_template(
+        "reports_lifecycle.html",
+        url_kind=url_kind,
+        kind=kind,
+        label=label,
+        items=items,
+        item=item,
+        result=result,
+        errors=list(dict.fromkeys(errors)),
+    )
+
+
+@bp.route("/lifecycle/bc")
+def lifecycle_bc():
+    return _lifecycle_page("bc")
+
+
+@bp.route("/lifecycle/sdtm")
+def lifecycle_sdtm():
+    return _lifecycle_page("sdtm")

@@ -33,6 +33,19 @@ CDISC Biomedical Concept Curation — a Flask/Jinja web application for curating
 
 ## Daily Changelog
 
+### 2026-11-20
+
+#### Added Reports > Lifecycle: Biomedical Concept and SDTM Specialization (Issue #112)
+
+- New `Lifecycle` sub-heading in the `REPORTS` sidebar section (`templates/base.html`) with two pages: `Biomedical Concept` (`/reports/lifecycle/bc`) and `SDTM Specialization` (`/reports/lifecycle/sdtm`).
+- Each page has a searchable picker (`<datalist>`) of every item loaded in any CDISC Library release (1,588 BCs / 1,641 SDTM specializations live), with items no longer in the current Library list flagged "(withdrawn)". Selecting one (`?id=`) renders a left-to-right timeline of the releases that loaded it: **Introduced** (full metadata), then **Changed** (field diffs vs the previous load) or **Unchanged**; a release list/detail that fails to load shows as **Unavailable** and never breaks the diff chain. Invalid id → 400.
+- Finding verified live: Library release packages are **deltas** (each lists only the items loaded in that release), so absence from a package is not a removal; withdrawal is judged against the current Library list instead.
+- `services/package_service.py` — `lifecycle(client, kind, id)` and `lifecycle_items(client, kind)`, reusing `detail_rows` / `diff_items`; `routes/reports.py` — `lifecycle_bc` / `lifecycle_sdtm`; new `reports_lifecycle.html`; metadata table rows extracted to shared `_detail_rows.html` (also used by `reports_package_item.html`); `_reports_breadcrumb.html` extended (Reports › Lifecycle › Biomedical Concept › C105585); brand-coloured status badges in `static/css/custom.css`.
+- `services/api_cache.py` — `cached()` takes an optional `ttl`; the stale grace period is relative to it (defaults unchanged). `services/cdisc_api.py` — new `PACKAGE_TTL` (24h) for released package member lists and item details (immutable); the package list itself keeps the 5-minute TTL so new releases appear. Cold first load ≈18s per page (19 releases), then milliseconds.
+- `CLAUDE.md` — `reports` blueprint added to the blueprint table.
+- No schema change, no Alembic revision.
+- Tests written first: `tests/test_cdisc_api_cache.py`, `tests/test_cdisc_api_packages.py`, `tests/test_package_service.py`, `tests/test_reports_routes.py`; 681 tests passing, lint clean ✅ (verified against the live Library in-process; not yet viewed in a browser)
+
 ### 2026-11-13
 
 #### Added BC Categories multi-select on the BC form (Issue #110)
