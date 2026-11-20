@@ -14,6 +14,7 @@ from services.cdisc_api import CDISCApiClient
 from services.export import export_governance_xlsx, export_json, export_odm_xml
 from services.loinc_api import LoincApiClient
 from services.ncit_api import NCItApiClient
+from services.package_service import list_categories
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,33 @@ def _result_scale_context(bc):
     selected = [s for s in scales if s in RESULT_SCALES]
     unsupported = [s for s in scales if s not in RESULT_SCALES]
     return {"result_scale_options": RESULT_SCALES, "selected_result_scales": selected, "unsupported_result_scales": unsupported}
+
+
+def _category_context(bc):
+    """Context for the BC Categories multi-select: Library categories (sorted),
+    the BC's current selection, and any selected values the Library doesn't
+    list (legacy/ingested free text), which are kept so a save can't drop them.
+    On a Library error the template falls back to the plain text input."""
+    library, errors = list_categories(CDISCApiClient(), with_errors=True)
+    selected = split_result_scales(bc.bc_categories if bc else None)
+    extras = [c for c in selected if c not in library]
+    options = sorted(library + extras, key=str.lower)
+    return {
+        "category_options": options,
+        "selected_categories": selected,
+        "unlisted_categories": extras,
+        "category_errors": errors if not library else [],
+        "category_text_fallback": not library,
+    }
+
+
+def _apply_categories(data, form):
+    """Join the multi-select values (or a plain text value) into the stored
+    semicolon-separated string; leave the field out entirely if the form
+    didn't submit it, so it is preserved. The hidden marker disambiguates an
+    all-unchecked group (clear) from a form without the field (leave alone)."""
+    if "bc_categories_submitted" in form or "bc_categories" in form:
+        data["bc_categories"] = "; ".join(v.strip() for v in form.getlist("bc_categories") if v.strip())
 
 
 @bp.route("/")
@@ -81,6 +109,7 @@ def new_bc():
             clone_from=clone_from,
             page_title=f"Clone of {clone_from}",
             **_result_scale_context(bc),
+            **_category_context(bc),
         )
 
     bc = BiomedicalConcept()
@@ -99,6 +128,7 @@ def new_bc():
         ncit_data={},
         page_title="New Biomedical Concept",
         **_result_scale_context(bc),
+        **_category_context(bc),
     )
 
 
@@ -193,6 +223,7 @@ def detail(bc_id):
         notes=notes_service.list_bc_notes(bc_id),
         page_title=bc.short_name,
         **_result_scale_context(bc),
+        **_category_context(bc),
     )
 
 
@@ -231,6 +262,7 @@ def fetch_metadata(bc_id):
 def create():
     data = request.form.to_dict()
     data["result_scales"] = "; ".join(request.form.getlist("result_scales"))
+    _apply_categories(data, request.form)
     try:
         bc = bc_service.create_bc(data)
     except ValueError as e:
@@ -251,6 +283,7 @@ def edit(bc_id):
     # on the real edit form) disambiguates "clear it" from "leave it alone".
     if "result_scales_submitted" in request.form:
         data["result_scales"] = "; ".join(request.form.getlist("result_scales"))
+    _apply_categories(data, request.form)
     try:
         bc_service.update_bc(bc_id, data, actor="user")
     except ValueError as e:

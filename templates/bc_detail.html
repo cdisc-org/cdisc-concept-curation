@@ -105,11 +105,41 @@
       <div class="bc-card bc-card-sm mb-0 mt-3">
         <h2 class="form-section-title">Classification</h2>
         <div class="mb-2">
-          <label for="bc_categories" class="form-label small">BC Categories</label>
+          <label for="bc_categories" class="form-label small" id="bc-categories-label">BC Categories</label>
+          {% if category_text_fallback %}
+          {% if category_errors %}
+          <div class="alert alert-warning py-1 px-2 small mb-1">Could not load categories from the CDISC Library ({{ category_errors | join('; ') }}). Enter them manually.</div>
+          {% endif %}
           <input type="text" id="bc_categories" name="bc_categories" class="form-control form-control-sm"
                  value="{{ bc.bc_categories or '' }}"
                  placeholder="e.g. Laboratory Tests; Diabetes">
           <div class="form-text">Separate multiple categories with semicolons.</div>
+          {% else %}
+          <input type="hidden" name="bc_categories_submitted" value="1">
+          <div class="dropdown bc-category-picker" data-category-picker>
+            <button class="btn btn-sm btn-outline-secondary dropdown-toggle w-100 text-start" type="button"
+                    id="bc_categories" data-bs-toggle="dropdown" data-bs-auto-close="outside"
+                    aria-expanded="false" aria-labelledby="bc-categories-label">
+              <span data-category-summary>{{ selected_categories | length }} selected</span>
+            </button>
+            <div class="dropdown-menu w-100 p-2">
+              <input type="search" class="form-control form-control-sm mb-2" placeholder="Filter categories…"
+                     aria-label="Filter categories" data-category-filter>
+              <div class="bc-category-list">
+                {% for cat in category_options %}
+                <div class="form-check" data-category-item>
+                  <input type="checkbox" class="form-check-input" id="bc_category_{{ loop.index0 }}"
+                         name="bc_categories" value="{{ cat }}"
+                         {% if cat in selected_categories %}checked{% endif %}>
+                  <label class="form-check-label small" for="bc_category_{{ loop.index0 }}">{{ cat }}{% if cat in unlisted_categories %} <span class="text-danger">(not in Library)</span>{% endif %}</label>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+            <div class="mt-1" data-category-badges></div>
+          </div>
+          <div class="form-text">Select one or more categories from the CDISC Library. Changes apply when you save.</div>
+          {% endif %}
         </div>
         <div class="row g-2">
           <div class="col-6">

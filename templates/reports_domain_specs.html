@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}SDTM Domain {{ domain }} — CDISC BC Curation{% endblock %}
+{% block page_title %}SDTM Domain {{ domain }}{% endblock %}
+
+{% block content %}
+{% include '_reports_breadcrumb.html' %}
+<div class="page-header">
+  <h1 class="page-title">SDTM Specializations — {{ domain }}</h1>
+</div>
+
+{% for e in errors %}<div class="alert alert-warning">CDISC Library error: {{ e }}</div>{% endfor %}
+{% if specs and not package_date and not errors %}
+<div class="alert alert-warning">No SDTM specialization package is available, so detail links are disabled.</div>
+{% endif %}
+
+<div class="bc-card">
+  {% if specs %}
+  <table class="bc-table" aria-label="SDTM specializations for domain {{ domain }}">
+    <thead>
+      <tr>
+        <th scope="col">Specialization</th>
+        <th scope="col">ID</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in specs %}
+      <tr>
+        <td>
+          {% if package_date %}<a href="{{ url_for('reports.package_item', date=package_date, kind='spec', item=s.id) }}">{{ s.title or s.id }}</a>{% else %}{{ s.title or s.id }}{% endif %}
+        </td>
+        <td>{{ s.id }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% elif not errors %}
+  <p class="text-muted mb-0">No specializations available for domain {{ domain }}.</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,27 @@
+{% if error %}
+<div class="text-danger small">Could not load comparison: {{ error }}</div>
+{% elif not diffs %}
+<div class="text-muted small">No field differences between {{ a }} and {{ b }}.</div>
+{% else %}
+<table class="bc-table table-sm mb-2" aria-label="Field differences between {{ a }} and {{ b }}">
+  <thead>
+    <tr>
+      <th scope="col">Field</th>
+      <th scope="col">Change</th>
+      <th scope="col">{{ a }}</th>
+      <th scope="col">{{ b }}</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for d in diffs %}
+    {% set colour = {'Added': '#286040', 'Removed': '#C94543', 'Changed': '#D57E00'}[d.change] %}
+    <tr>
+      <th scope="row" style="word-break:break-word;">{{ d.field }}</th>
+      <td><span style="color:{{ colour }};font-weight:bold;">{{ d.change }}</span></td>
+      <td style="white-space:pre-wrap;word-break:break-word;">{{ d.a or '—' }}</td>
+      <td style="white-space:pre-wrap;word-break:break-word;">{{ d.b or '—' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}

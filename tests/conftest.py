@@ -56,6 +56,16 @@ def clear_api_cache():
     yield
 
 
+@pytest.fixture(autouse=True)
+def stub_bc_form_categories():
+    """The BC form lists Library categories; stub that lookup so no test hits
+    the network. Tests that care override it with their own patch."""
+    from unittest.mock import patch
+
+    with patch("routes.bc.list_categories", return_value=([], [])):
+        yield
+
+
 @pytest.fixture()
 def sample_bc(app):
     """A minimal BiomedicalConcept persisted to the test DB."""

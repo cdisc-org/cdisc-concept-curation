@@ -63,7 +63,7 @@ pytest tests/test_bc_routes.py -v   # single file
 - `extensions.py` — Shared `db` and `migrate` instances (avoids circular imports — always import from here)
 - `tests/` - Unit tests
 
-**10 blueprints** registered in `app.py`:
+**11 blueprints** registered in `app.py`:
 
 | Blueprint | Prefix | Purpose |
 |-----------|--------|---------|
@@ -77,6 +77,7 @@ pytest tests/test_bc_routes.py -v   # single file
 | `governance` | `/governance` | 4-stage Kanban board |
 | `audit` | `/audit` | Immutable change log |
 | `notes` | `/notes` | Free-text notes on BCs/specializations |
+| `reports` | `/reports` | CDISC Library release reports: Packages, Comparison, SDTM Domains, BC Categories, and Lifecycle (per-release history of a BC or SDTM specialization) |
 
 **Key services:**
 - `services/cdisc_api.py` — CDISC Library REST client with 5-min in-memory cache

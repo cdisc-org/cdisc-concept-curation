@@ -13,6 +13,7 @@ from services.export import (
     export_governance_xlsx,
     export_json,
     export_odm_xml,
+    export_specialization_csv,
 )
 from services.ingestion import VARIABLE_FIELDS, parse_xlsx
 
@@ -338,3 +339,49 @@ class TestExportOdmXml:
         ns = {"odm": "http://www.cdisc.org/ns/odm/v1.3"}
         item_defs = root.findall("odm:ItemDef", ns)
         assert len(item_defs) == 2
+
+
+class TestExportSpecializationCsv:
+    def _spec(self):
+        spec = DatasetSpecialization(vlm_group_id="C64854.LB", bc_id="C64854", domain="LB", short_name="Ketones LB", status="provisional")
+        spec.variables = [
+            {"sdtm_variable": "LBTESTCD", "codelist": "LBTESTCD, with comma", "data_type": "text"},
+            {"sdtm_variable": "LBORRES", "value_list": 'a "quoted" value\nsecond line'},
+        ]
+        return spec
+
+    def test_header_uses_all_variable_field_labels(self):
+        import csv
+        import io
+
+        from services.ingestion import VARIABLE_FIELD_DEFS
+
+        rows = list(csv.reader(io.StringIO(export_specialization_csv(self._spec()))))
+        assert rows[0] == ["VLM Group ID", "BC ID", "Domain", "Short Name"] + [label for _, label in VARIABLE_FIELD_DEFS]
+        assert len(rows[0]) == 4 + 24
+
+    def test_one_row_per_variable_with_spec_columns_repeated(self):
+        import csv
+        import io
+
+        rows = list(csv.reader(io.StringIO(export_specialization_csv(self._spec()))))
+        assert len(rows) == 3
+        assert rows[1][:4] == ["C64854.LB", "C64854", "LB", "Ketones LB"]
+        assert rows[2][4] == "LBORRES"
+
+    def test_values_with_commas_quotes_newlines_round_trip(self):
+        import csv
+        import io
+
+        rows = list(csv.reader(io.StringIO(export_specialization_csv(self._spec()))))
+        assert rows[1][4 + VARIABLE_FIELDS.index("codelist")] == "LBTESTCD, with comma"
+        assert rows[2][4 + VARIABLE_FIELDS.index("value_list")] == 'a "quoted" value\nsecond line'
+
+    def test_spec_without_variables_exports_single_spec_row(self):
+        import csv
+        import io
+
+        spec = DatasetSpecialization(vlm_group_id="X.LB", bc_id="X", domain="LB", short_name="n")
+        rows = list(csv.reader(io.StringIO(export_specialization_csv(spec))))
+        assert len(rows) == 2
+        assert rows[1][:4] == ["X.LB", "X", "LB", "n"]

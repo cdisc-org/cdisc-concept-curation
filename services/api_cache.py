@@ -19,13 +19,20 @@ CACHE_TTL = 300  # serve fresh data for 5 minutes
 CACHE_STALE_TTL = 3600  # serve stale data for up to 1 hour while refresh fails
 
 
-def cached(cache_key, fn):
+def cached(cache_key, fn, ttl=None):
     """Return cached data if fresh. If stale, attempt a refresh but fall back
-    to the stale entry rather than propagating an error or blocking."""
+    to the stale entry rather than propagating an error or blocking.
+
+    ``ttl`` overrides the fresh window (default CACHE_TTL) for data that
+    rarely changes. The stale grace period after it is the same for every
+    ttl (CACHE_STALE_TTL - CACHE_TTL), so defaults are unchanged.
+    """
+    ttl = CACHE_TTL if ttl is None else ttl
+    stale_ttl = ttl + (CACHE_STALE_TTL - CACHE_TTL)
     now = time.time()
     entry = _cache.get(cache_key)
 
-    if entry and now - entry[0] < CACHE_TTL:
+    if entry and now - entry[0] < ttl:
         return entry[1]  # fresh — serve immediately
 
     # Attempt a refresh. Broad catch is intentional: this is a resilience
@@ -35,7 +42,7 @@ def cached(cache_key, fn):
         _cache[cache_key] = (now, data)
         return data
     except Exception:
-        if entry and now - entry[0] < CACHE_STALE_TTL:
+        if entry and now - entry[0] < stale_ttl:
             logger.warning("Cache refresh failed for %s; serving stale entry", cache_key, exc_info=True)
             return entry[1]
         logger.error("Cache refresh failed for %s with no stale fallback", cache_key, exc_info=True)

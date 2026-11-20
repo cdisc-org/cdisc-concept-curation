@@ -1,3 +1,4 @@
+import csv
 import io
 import json
 import logging
@@ -14,7 +15,7 @@ try:
 except ImportError:
     etree = None
 
-from services.ingestion import VARIABLE_FIELDS
+from services.ingestion import VARIABLE_FIELD_DEFS, VARIABLE_FIELDS
 
 logger = logging.getLogger(__name__)
 
@@ -174,6 +175,22 @@ def export_governance_xlsx(bc_objects, spec_objects=None):
     wb.save(buf)
     buf.seek(0)
     return buf
+
+
+def export_specialization_csv(spec):
+    """Export one DatasetSpecialization as CSV text for review/sharing.
+
+    One row per variable; the four spec-level columns are repeated on every
+    row, followed by all VARIABLE_FIELD_DEFS columns under their display
+    labels. A spec with no variables yields a single spec-only row.
+    """
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(["VLM Group ID", "BC ID", "Domain", "Short Name"] + [label for _, label in VARIABLE_FIELD_DEFS])
+    spec_cols = [spec.vlm_group_id, spec.bc_id, spec.domain or "", spec.short_name or ""]
+    for variable in spec.variables or [{}]:
+        writer.writerow(spec_cols + [variable.get(field, "") for field in VARIABLE_FIELDS])
+    return out.getvalue()
 
 
 def export_odm_xml(bc_list):

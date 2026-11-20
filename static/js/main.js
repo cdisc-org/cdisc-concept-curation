@@ -20,6 +20,41 @@
   }
 
   /* ─────────────────────────────────────────────
+     BC Categories multi-select: filter, summary, badges
+  ───────────────────────────────────────────── */
+  function initCategoryPicker() {
+    document.querySelectorAll('[data-category-picker]').forEach(function (picker) {
+      const filter = picker.querySelector('[data-category-filter]');
+      const items = picker.querySelectorAll('[data-category-item]');
+      const summary = picker.querySelector('[data-category-summary]');
+      const badges = picker.querySelector('[data-category-badges]');
+
+      function refresh() {
+        const checked = picker.querySelectorAll('input[name="bc_categories"]:checked');
+        summary.textContent = checked.length + ' selected';
+        badges.textContent = '';
+        checked.forEach(function (box) {
+          const badge = document.createElement('span');
+          badge.className = 'badge bc-category-badge me-1 mb-1';
+          badge.textContent = box.value;
+          badges.appendChild(badge);
+        });
+      }
+
+      if (filter) {
+        filter.addEventListener('input', function () {
+          const q = filter.value.trim().toLowerCase();
+          items.forEach(function (item) {
+            item.classList.toggle('d-none', q && item.textContent.toLowerCase().indexOf(q) === -1);
+          });
+        });
+      }
+      picker.addEventListener('change', refresh);
+      refresh();
+    });
+  }
+
+  /* ─────────────────────────────────────────────
      File upload: show filename + drag-drop feedback
   ───────────────────────────────────────────── */
   function initFileUpload() {
@@ -1146,6 +1181,7 @@
   ───────────────────────────────────────────── */
   document.addEventListener('DOMContentLoaded', function () {
     initFlashDismiss();
+    initCategoryPicker();
     initFileUpload();
     initPendingNcitConcept();
     initNcitLookup();
