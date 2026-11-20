@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% set noun = 'concept' if kind == 'bc' else 'specialization' %}
+{% block title %}{{ label }} Lifecycle — CDISC BC Curation{% endblock %}
+{% block page_title %}{{ label }} Lifecycle{% endblock %}
+
+{% block content %}
+{% include '_reports_breadcrumb.html' %}
+<div class="page-header">
+  <h1 class="page-title">{{ label }} Lifecycle</h1>
+</div>
+
+{% for e in errors %}<div class="alert alert-warning">CDISC Library error: {{ e }}</div>{% endfor %}
+
+<div class="bc-card">
+  <form method="get" action="{{ url_for('reports.lifecycle_' ~ url_kind) }}" class="lifecycle-picker" role="search">
+    <label for="lifecycle-id" class="form-label fw-semibold">{{ label }}</label>
+    <div class="d-flex flex-wrap gap-2">
+      <input id="lifecycle-id" name="id" class="form-control" list="lifecycle-options" value="{{ item }}"
+             placeholder="Search by name or ID" autocomplete="off" required
+             pattern="[A-Za-z0-9_.\-]+" aria-describedby="lifecycle-help">
+      <button type="submit" class="btn btn-primary">
+        <i class="bi bi-clock-history" aria-hidden="true"></i> Show lifecycle
+      </button>
+    </div>
+    <datalist id="lifecycle-options">
+      {% for i in items %}<option value="{{ i.id }}">{{ i.title }}{% if i.withdrawn %} (withdrawn){% endif %}</option>{% endfor %}
+    </datalist>
+    <div id="lifecycle-help" class="form-text">
+      {{ items|length }} {{ noun }}{{ 's' if items|length != 1 }} loaded across all CDISC Library releases, including any since withdrawn.
+    </div>
+  </form>
+</div>
+
+{% if result %}
+<div class="bc-card">
+  {% if not result.found %}
+  {% if not errors %}<p class="text-muted mb-0">{{ item }} was not found in any {{ label }} release.</p>
+  {% else %}<p class="text-muted mb-0">{{ item }} was not found in any {{ label }} release that loaded.</p>{% endif %}
+  {% else %}
+  {% set loads = result.events|rejectattr('status', 'equalto', 'Unavailable')|list %}
+  {% set changes = result.events|selectattr('status', 'equalto', 'Changed')|list %}
+  <h2 class="lifecycle-heading">{{ result.title or item }} <span class="text-muted fw-normal">({{ item }})</span></h2>
+  <p class="text-muted small mb-3">
+    loaded in {{ loads|length }} release{{ 's' if loads|length != 1 }} ·
+    first released {{ result.events|selectattr('status', 'equalto', 'Introduced')|map(attribute='date')|first|default('—') }} ·
+    {{ changes|length }} with changes
+  </p>
+  {% if result.withdrawn %}
+  <div class="alert alert-secondary py-2 small">This {{ noun }} is no longer in the current CDISC Library.</div>
+  {% endif %}
+  <p class="small text-muted mb-2">Each card is a release that loaded this {{ noun }}. Releases that did not touch it are not shown.</p>
+
+  <ol class="lifecycle-timeline" aria-label="Release history of {{ item }}, oldest first">
+    {% for ev in result.events %}
+    <li class="lifecycle-event lifecycle-{{ ev.status|lower }}">
+      <div class="lifecycle-event-header">
+        <span class="lifecycle-date">{{ ev.date }}</span>
+        <span class="lifecycle-status">{{ ev.status }}</span>
+      </div>
+      <div class="lifecycle-event-body">
+        {% if ev.status == 'Introduced' %}
+        <table class="bc-table table-sm" aria-label="{{ item }} metadata in release {{ ev.date }}">
+          <thead><tr><th scope="col">Field</th><th scope="col">Value</th></tr></thead>
+          <tbody>{% with rows = ev.rows %}{% include '_detail_rows.html' %}{% endwith %}</tbody>
+        </table>
+        {% elif ev.status in ('Changed', 'Unchanged') %}
+        {% with diffs = ev.diffs, error = None, a = ev.previous, b = ev.date %}{% include 'reports_diff_fragment.html' %}{% endwith %}
+        {% else %}
+        <p class="small mb-0 text-danger">Could not load this release: {{ ev.error }}</p>
+        {% endif %}
+      </div>
+      {% if ev.status != 'Unavailable' %}
+      <div class="lifecycle-event-footer">
+        <a href="{{ url_for('reports.package_item', date=ev.date, kind=kind, item=item) }}">View in release {{ ev.date }}</a>
+      </div>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

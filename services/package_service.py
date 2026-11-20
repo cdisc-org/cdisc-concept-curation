@@ -371,3 +371,125 @@ def diff_items(a, b):
     rows = []
     _diff_dicts(a, b, "", rows)
     return rows
+
+
+# ── Lifecycle (#112) ──────────────────────────────────────────────────────
+#
+# CDISC Library release packages are DELTAS: each dated package lists only
+# the items loaded (added or updated) in that release, not a full snapshot.
+# An item's lifecycle is therefore the sequence of packages that contain it,
+# each version diffed against the previous load. Absence from a package
+# means "not loaded in that release", never a removal; whether an item has
+# been withdrawn is judged against the Library's current list instead.
+# Member lists and details of released packages are immutable and cached
+# long-term by CDISCApiClient (PACKAGE_TTL).
+
+# kind -> (release list, package member list, package detail, current list)
+_LIFECYCLE_FETCHERS = {
+    "bc": ("get_bc_packages", "get_package_bcs", "get_package_bc", "get_biomedical_concepts"),
+    "spec": ("get_spec_packages", "get_package_specs", "get_package_spec", "get_dataset_specializations"),
+}
+
+
+def _release_dates(client, kind):
+    """(ascending release dates for ``kind``, [error messages])."""
+    good, errors = _split(getattr(client, _LIFECYCLE_FETCHERS[kind][0])())
+    dates = sorted({d for d in (package_date(lnk["href"]) for lnk in good) if d})
+    return dates, errors
+
+
+def _release_members(client, kind, dates):
+    """Yield (date, {id: title} or None if the list failed, errors) per release."""
+    fetch = getattr(client, _LIFECYCLE_FETCHERS[kind][1])
+    for date in dates:
+        good, errors = _split(fetch(date))
+        yield date, (None if errors else {item_id(lnk["href"]): lnk.get("title", "") for lnk in good}), errors
+
+
+def _current_ids(client, kind):
+    """(set of ids in the Library's current list, or None if it failed, errors).
+    For specializations only SDTM entries count."""
+    good, errors = _split(getattr(client, _LIFECYCLE_FETCHERS[kind][3])())
+    if errors:
+        return None, errors
+    if kind == "spec":
+        good = [lnk for lnk in good if "/sdtm/" in lnk["href"]]
+    return {item_id(lnk["href"]) for lnk in good}, []
+
+
+def lifecycle_items(client, kind):
+    """Picker list for the Lifecycle report: every item loaded in any
+    release, so withdrawn items can still be looked up.
+
+    Returns ([{id, title, withdrawn}], errors), sorted by title. ``title``
+    comes from the newest release containing the item; ``withdrawn`` is True
+    when the item is missing from the Library's current list (only judged
+    when that list loaded).
+    """
+    dates, errors = _release_dates(client, kind)
+    titles = {}
+    for _date, members, errs in _release_members(client, kind, dates):
+        errors.extend(errs)
+        titles.update(members or {})
+    current, errs = _current_ids(client, kind)
+    errors.extend(errs)
+    items = [{"id": i, "title": t or i, "withdrawn": current is not None and i not in current} for i, t in titles.items()]
+    return sorted(items, key=lambda i: (i["title"].lower(), i["id"])), errors
+
+
+def _event(date, status, previous=None, rows=None, diffs=None, error=None):
+    return {"date": date, "status": status, "previous": previous, "rows": rows or [], "diffs": diffs or [], "error": error}
+
+
+def lifecycle(client, kind, ident):
+    """The load history of one item, oldest release first.
+
+    Returns {title, found, withdrawn, events, errors}. ``withdrawn`` is
+    True/False against the Library's current list, or None if that list
+    failed to load. Each event is {date, status, previous, rows, diffs,
+    error} where status is one of:
+
+    * Introduced  – first release that loaded the item; ``rows`` holds its
+                    full metadata (``detail_rows``)
+    * Changed     – reloaded with field changes; ``diffs`` against the
+                    version loaded in ``previous``
+    * Unchanged   – reloaded with no field changes since ``previous``
+    * Unavailable – the release list or the item's detail failed to load,
+                    so we can't tell; the diff baseline is kept
+
+    Releases that did not load the item are omitted.
+    """
+    detail = getattr(client, _LIFECYCLE_FETCHERS[kind][2])
+    dates, errors = _release_dates(client, kind)
+    events = []
+    prev = None  # (date, detail) of the last version successfully loaded
+    title = None
+    for date, members, errs in _release_members(client, kind, dates):
+        if members is None:
+            errors.extend(errs)
+            events.append(_event(date, "Unavailable", error="; ".join(errs)))
+            continue
+        if ident not in members:
+            continue
+        title = members[ident] or title
+        data = detail(date, ident)
+        if "error" in data:
+            errors.append(data["error"])
+            events.append(_event(date, "Unavailable", error=data["error"]))
+            continue
+        if prev is None:
+            events.append(_event(date, "Introduced", rows=detail_rows(data)))
+        else:
+            diffs = diff_items(prev[1], data)
+            events.append(_event(date, "Changed" if diffs else "Unchanged", previous=prev[0], diffs=diffs))
+        prev = (date, data)
+    found = title is not None
+    if not found:
+        # Drop list-failure placeholders when the item was never loaded at all.
+        events = []
+    withdrawn = None
+    if found:
+        current, errs = _current_ids(client, kind)
+        errors.extend(errs)
+        withdrawn = None if current is None else ident not in current
+    return {"title": title, "found": found, "withdrawn": withdrawn, "events": events, "errors": errors}

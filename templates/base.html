@@ -108,6 +108,19 @@
         <i class="bi bi-tags nav-icon" aria-hidden="true"></i>
         BC Categories
       </a>
+      <div class="nav-subsection-label" id="nav-lifecycle-label">Lifecycle</div>
+      <a href="{{ url_for('reports.lifecycle_bc') }}"
+         class="nav-item nav-item-sub {% if request.endpoint == 'reports.lifecycle_bc' %}active{% endif %}"
+         aria-current="{% if request.endpoint == 'reports.lifecycle_bc' %}page{% endif %}">
+        <i class="bi bi-clock-history nav-icon" aria-hidden="true"></i>
+        Biomedical Concept
+      </a>
+      <a href="{{ url_for('reports.lifecycle_sdtm') }}"
+         class="nav-item nav-item-sub {% if request.endpoint == 'reports.lifecycle_sdtm' %}active{% endif %}"
+         aria-current="{% if request.endpoint == 'reports.lifecycle_sdtm' %}page{% endif %}">
+        <i class="bi bi-clock-history nav-icon" aria-hidden="true"></i>
+        SDTM Specialization
+      </a>
     </div>
 
     <div class="sidebar-footer">

@@ -174,3 +174,45 @@ def test_get_category_bcs_caches_per_category_and_reports_errors():
         assert c.get_category_bcs("Y") == [{"href": "b"}]
     with patch.object(CDISCApiClient, "_get", side_effect=requests.RequestException("down")):
         assert c.get_category_bcs("Z") == [{"error": "down"}]
+
+
+# ── Long-lived cache for released package contents (#112) ──────────────
+
+
+def test_package_contents_and_details_use_long_ttl():
+    """Released packages are immutable, so their member lists and item
+    details stay fresh well past the default 5-minute TTL."""
+    c = _client()
+    with patch.object(CDISCApiClient, "_get", side_effect=[{"_links": {"biomedicalConcepts": [{"href": "a"}]}}, {"conceptId": "C1"}]):
+        c.get_package_bcs("2023-02-13")
+        c.get_package_bc("2023-02-13", "C1")
+    _age(c, "bc_package:2023-02-13", api_cache.CACHE_TTL + 10)
+    _age(c, "bc_package:2023-02-13:C1", api_cache.CACHE_TTL + 10)
+    with patch.object(CDISCApiClient, "_get") as g:
+        assert c.get_package_bcs("2023-02-13") == [{"href": "a"}]
+        assert c.get_package_bc("2023-02-13", "C1") == {"conceptId": "C1"}
+    g.assert_not_called()
+
+
+def test_spec_package_contents_use_long_ttl():
+    c = _client()
+    with patch.object(CDISCApiClient, "_get", side_effect=[{"_links": {"datasetSpecializations": [{"href": "b"}]}}, {"datasetSpecializationId": "S1"}]):
+        c.get_package_specs("2023-02-13")
+        c.get_package_spec("2023-02-13", "S1")
+    _age(c, "spec_package:2023-02-13", api_cache.CACHE_TTL + 10)
+    _age(c, "spec_package:2023-02-13:S1", api_cache.CACHE_TTL + 10)
+    with patch.object(CDISCApiClient, "_get") as g:
+        assert c.get_package_specs("2023-02-13") == [{"href": "b"}]
+        assert c.get_package_spec("2023-02-13", "S1") == {"datasetSpecializationId": "S1"}
+    g.assert_not_called()
+
+
+def test_package_list_keeps_short_ttl():
+    """The list of releases itself can grow, so it keeps the default TTL."""
+    c = _client()
+    with patch.object(CDISCApiClient, "_get", return_value={"_links": {"packages": []}}):
+        c.get_bc_packages()
+    _age(c, "bc_packages", api_cache.CACHE_TTL + 10)
+    new = {"_links": {"packages": [{"href": "/mdr/bc/packages/2026-01-01/biomedicalconcepts"}]}}
+    with patch.object(CDISCApiClient, "_get", return_value=new):
+        assert c.get_bc_packages() == new["_links"]["packages"]

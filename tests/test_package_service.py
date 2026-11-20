@@ -362,3 +362,211 @@ class TestCategories:
         c = MagicMock()
         c.get_category_bcs.return_value = [{"error": "boom"}]
         assert ps.category_bcs(c, "Lab") == ([], ["boom"])
+
+
+# ── Lifecycle (#112) ──────────────────────────────────────────────────────
+
+LC_DATES = ["2022-01-01", "2023-01-01", "2024-01-01", "2025-01-01"]
+
+
+def _lc_client(members, details, kind="bc", dates=None, current=None):
+    """Fake client for lifecycle tests.
+
+    Release packages are deltas: each lists only the items loaded in that
+    release. ``members``: {date: [ids] | "error"}; ``details``:
+    {(date, id): dict | "error"}. ``dates`` defaults to the releases named in
+    ``members``; ``current`` (ids in the Library's current list, or "error")
+    defaults to every id in any release.
+    """
+    dates = dates if dates is not None else (sorted(members) or LC_DATES)
+    if current is None:
+        current = sorted({i for m in members.values() if m != "error" for i in m})
+    c = MagicMock()
+    if current == "error":
+        cur_links = [{"error": "current down"}]
+    elif kind == "bc":
+        cur_links = [{"href": f"/mdr/bc/biomedicalconcepts/{i}", "title": i} for i in current]
+    else:
+        cur_links = [{"href": f"/mdr/specializations/sdtm/datasetspecializations/{i}", "title": i} for i in current] + [
+            {"href": "/mdr/specializations/cdash/datasetspecializations/CDASHONLY", "title": "x"}
+        ]
+    c.get_biomedical_concepts.return_value = cur_links if kind == "bc" else []
+    c.get_dataset_specializations.return_value = cur_links if kind == "spec" else []
+    root = "/mdr/bc/packages" if kind == "bc" else "/mdr/specializations/sdtm/packages"
+    sub = "biomedicalconcepts" if kind == "bc" else "datasetspecializations"
+    pkgs = [{"href": f"{root}/{d}/{sub}", "title": d} for d in dates]
+    c.get_bc_packages.return_value = pkgs if kind == "bc" else []
+    c.get_spec_packages.return_value = pkgs if kind == "spec" else []
+
+    def _members(d):
+        m = members.get(d, [])
+        if m == "error":
+            return [{"error": f"list {d} down"}]
+        return [{"href": f"{root}/{d}/{sub}/{i}", "title": f"Title {i} {d}"} for i in m]
+
+    def _detail(d, i):
+        v = details.get((d, i), {"conceptId": i})
+        return {"error": f"detail {d} down"} if v == "error" else v
+
+    if kind == "bc":
+        c.get_package_bcs.side_effect = _members
+        c.get_package_bc.side_effect = _detail
+    else:
+        c.get_package_specs.side_effect = _members
+        c.get_package_spec.side_effect = _detail
+    return c
+
+
+def _statuses(result):
+    return [(e["date"], e["status"]) for e in result["events"]]
+
+
+class TestLifecycle:
+    def test_introduced_then_changed_then_unchanged(self):
+        c = _lc_client(
+            {"2022-01-01": [], "2023-01-01": ["C1"], "2024-01-01": ["C1"], "2025-01-01": ["C1"]},
+            {
+                ("2023-01-01", "C1"): {"conceptId": "C1", "definition": "old"},
+                ("2024-01-01", "C1"): {"conceptId": "C1", "definition": "new"},
+                ("2025-01-01", "C1"): {"conceptId": "C1", "definition": "new"},
+            },
+        )
+        out = ps.lifecycle(c, "bc", "C1")
+        assert _statuses(out) == [("2023-01-01", "Introduced"), ("2024-01-01", "Changed"), ("2025-01-01", "Unchanged")]
+        assert out["found"] is True and out["errors"] == []
+
+    def test_introduced_event_carries_full_metadata(self):
+        c = _lc_client({"2023-01-01": ["C1"]}, {("2023-01-01", "C1"): {"conceptId": "C1", "shortName": "Glucose"}})
+        first = ps.lifecycle(c, "bc", "C1")["events"][0]
+        assert {"field": "shortName", "value": "Glucose", "items": None} in first["rows"]
+        assert first["diffs"] == []
+
+    def test_changed_event_carries_field_diffs_against_previous_version(self):
+        c = _lc_client(
+            {"2023-01-01": ["C1"], "2024-01-01": ["C1"]},
+            {("2023-01-01", "C1"): {"conceptId": "C1", "definition": "old"}, ("2024-01-01", "C1"): {"conceptId": "C1", "definition": "new"}},
+        )
+        changed = ps.lifecycle(c, "bc", "C1")["events"][1]
+        assert changed["diffs"] == [{"field": "definition", "change": "Changed", "a": "old", "b": "new"}]
+        assert changed["previous"] == "2023-01-01"
+
+    def test_links_are_ignored_when_diffing(self):
+        c = _lc_client(
+            {"2023-01-01": ["C1"], "2024-01-01": ["C1"]},
+            {
+                ("2023-01-01", "C1"): {"conceptId": "C1", "_links": {"self": {"href": "/2023"}}},
+                ("2024-01-01", "C1"): {"conceptId": "C1", "_links": {"self": {"href": "/2024"}}},
+            },
+        )
+        assert _statuses(ps.lifecycle(c, "bc", "C1"))[1] == ("2024-01-01", "Unchanged")
+
+    def test_releases_that_did_not_load_the_item_are_skipped(self):
+        """Packages are deltas: absence means "not loaded in that release",
+        never a removal. A later load is diffed against the previous load."""
+        c = _lc_client(
+            {"2022-01-01": ["C1"], "2023-01-01": ["C9"], "2024-01-01": ["C9"], "2025-01-01": ["C1"]},
+            {("2022-01-01", "C1"): {"conceptId": "C1", "definition": "a"}, ("2025-01-01", "C1"): {"conceptId": "C1", "definition": "b"}},
+        )
+        out = ps.lifecycle(c, "bc", "C1")
+        assert _statuses(out) == [("2022-01-01", "Introduced"), ("2025-01-01", "Changed")]
+        assert out["events"][1]["previous"] == "2022-01-01"
+        assert out["events"][1]["diffs"] == [{"field": "definition", "change": "Changed", "a": "a", "b": "b"}]
+
+    def test_not_in_latest_release_is_not_a_removal(self):
+        c = _lc_client({"2022-01-01": ["C1"], "2023-01-01": ["C1"], "2024-01-01": ["C9"]}, {})
+        assert _statuses(ps.lifecycle(c, "bc", "C1")) == [("2022-01-01", "Introduced"), ("2023-01-01", "Unchanged")]
+
+    def test_withdrawn_when_missing_from_current_library_list(self):
+        c = _lc_client({"2022-01-01": ["C1", "C9"]}, {}, current=["C9"])
+        assert ps.lifecycle(c, "bc", "C1")["withdrawn"] is True
+        assert ps.lifecycle(c, "bc", "C9")["withdrawn"] is False
+
+    def test_withdrawn_unknown_when_current_list_fails(self):
+        c = _lc_client({"2022-01-01": ["C1"]}, {}, current="error")
+        out = ps.lifecycle(c, "bc", "C1")
+        assert out["withdrawn"] is None and "current down" in out["errors"]
+
+    def test_releases_before_introduction_are_not_shown(self):
+        c = _lc_client({"2022-01-01": ["C9"], "2023-01-01": ["C9"], "2024-01-01": ["C1", "C9"]}, {})
+        assert _statuses(ps.lifecycle(c, "bc", "C1")) == [("2024-01-01", "Introduced")]
+
+    def test_failed_member_list_is_unavailable_not_removed(self):
+        c = _lc_client({"2022-01-01": ["C1"], "2023-01-01": "error", "2024-01-01": ["C1"]}, {})
+        out = ps.lifecycle(c, "bc", "C1")
+        assert _statuses(out) == [("2022-01-01", "Introduced"), ("2023-01-01", "Unavailable"), ("2024-01-01", "Unchanged")]
+        assert "list 2023-01-01 down" in out["errors"]
+
+    def test_failed_detail_is_unavailable_and_baseline_is_kept(self):
+        c = _lc_client(
+            {"2022-01-01": ["C1"], "2023-01-01": ["C1"], "2024-01-01": ["C1"]},
+            {
+                ("2022-01-01", "C1"): {"conceptId": "C1", "definition": "a"},
+                ("2023-01-01", "C1"): "error",
+                ("2024-01-01", "C1"): {"conceptId": "C1", "definition": "b"},
+            },
+        )
+        out = ps.lifecycle(c, "bc", "C1")
+        assert _statuses(out) == [("2022-01-01", "Introduced"), ("2023-01-01", "Unavailable"), ("2024-01-01", "Changed")]
+        assert out["events"][2]["previous"] == "2022-01-01"
+        assert "detail 2023-01-01 down" in out["errors"]
+
+    def test_failed_detail_on_first_appearance_still_introduces_later(self):
+        c = _lc_client({"2022-01-01": ["C1"], "2023-01-01": ["C1"]}, {("2022-01-01", "C1"): "error"})
+        assert _statuses(ps.lifecycle(c, "bc", "C1")) == [("2022-01-01", "Unavailable"), ("2023-01-01", "Introduced")]
+
+    def test_unknown_item_is_not_found(self):
+        c = _lc_client({"2022-01-01": ["C9"]}, {})
+        out = ps.lifecycle(c, "bc", "NOPE")
+        assert out["found"] is False and out["events"] == []
+
+    def test_title_comes_from_latest_version(self):
+        c = _lc_client({"2022-01-01": ["C1"], "2023-01-01": ["C1"]}, {})
+        assert ps.lifecycle(c, "bc", "C1")["title"] == "Title C1 2023-01-01"
+
+    def test_package_list_error_is_reported(self):
+        c = _lc_client({}, {})
+        c.get_bc_packages.return_value = [{"error": "pkgs down"}]
+        out = ps.lifecycle(c, "bc", "C1")
+        assert out["errors"] == ["pkgs down"] and out["events"] == []
+
+    def test_spec_kind_uses_spec_endpoints(self):
+        c = _lc_client({"2023-01-01": ["SYSBP"]}, {}, kind="spec")
+        out = ps.lifecycle(c, "spec", "SYSBP")
+        assert _statuses(out) == [("2023-01-01", "Introduced")]
+        c.get_package_bcs.assert_not_called()
+
+    def test_member_lists_fetched_once_per_release(self):
+        c = _lc_client({d: ["C1"] for d in LC_DATES}, {})
+        ps.lifecycle(c, "bc", "C1")
+        assert c.get_package_bcs.call_count == len(LC_DATES)
+
+
+class TestLifecycleItems:
+    def test_union_of_all_releases_sorted_by_title_with_withdrawn_flag(self):
+        c = _lc_client({"2022-01-01": ["C1", "C2"], "2023-01-01": ["C2", "C3"]}, {}, current=["C2", "C3"])
+        items, errors = ps.lifecycle_items(c, "bc")
+        assert errors == []
+        assert [(i["id"], i["withdrawn"]) for i in items] == [("C1", True), ("C2", False), ("C3", False)]
+        # Title comes from the newest release containing the item.
+        assert {i["id"]: i["title"] for i in items}["C2"] == "Title C2 2023-01-01"
+
+    def test_item_missing_from_latest_package_is_not_withdrawn(self):
+        c = _lc_client({"2022-01-01": ["C1"], "2023-01-01": ["C2"]}, {})
+        items, _ = ps.lifecycle_items(c, "bc")
+        assert [(i["id"], i["withdrawn"]) for i in items] == [("C1", False), ("C2", False)]
+
+    def test_withdrawn_flag_not_set_when_current_list_failed(self):
+        c = _lc_client({"2022-01-01": ["C1"]}, {}, current="error")
+        items, errors = ps.lifecycle_items(c, "bc")
+        assert [(i["id"], i["withdrawn"]) for i in items] == [("C1", False)]
+        assert errors == ["current down"]
+
+    def test_failed_release_list_is_reported(self):
+        c = _lc_client({"2022-01-01": ["C1"], "2023-01-01": "error"}, {})
+        items, errors = ps.lifecycle_items(c, "bc")
+        assert [i["id"] for i in items] == ["C1"] and errors == ["list 2023-01-01 down"]
+
+    def test_spec_items_use_sdtm_current_list_only(self):
+        c = _lc_client({"2023-01-01": ["SYSBP"]}, {}, kind="spec", current=["SYSBP"])
+        items, _ = ps.lifecycle_items(c, "spec")
+        assert [(i["id"], i["withdrawn"]) for i in items] == [("SYSBP", False)]

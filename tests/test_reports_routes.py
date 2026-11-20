@@ -415,3 +415,97 @@ def test_category_breadcrumb(client):
         crumb = _breadcrumb(client.get("/reports/categories/Lipid%20Measurements").get_data(as_text=True))
     assert 'href="/reports/categories"' in crumb
     assert crumb.index("Reports") < crumb.index("BC Categories") < crumb.index("Lipid Measurements")
+
+
+# ── Lifecycle (#112) ──────────────────────────────────────────────────────
+
+
+def _lc_mock():
+    c = _client_mock()
+    c.get_package_bc.side_effect = lambda d, i: {"conceptId": i, "shortName": "SN", "definition": f"def {d}"}
+    c.get_package_specs.side_effect = lambda d: {
+        "2023-02-13": [{"href": "/p/SYSBP", "title": "Systolic Blood Pressure"}],
+        "2024-05-01": [{"href": "/p/SYSBP", "title": "Systolic Blood Pressure"}, {"href": "/p/BMI", "title": "Body Mass Index"}],
+    }[d]
+    c.get_package_spec.side_effect = lambda d, i: {"datasetSpecializationId": i, "domain": "VS", "shortName": "SYSBP"}
+    # Current Library lists: C1 has been withdrawn.
+    c.get_biomedical_concepts.return_value = [{"href": f"/mdr/bc/biomedicalconcepts/{i}", "title": i} for i in ("C2", "C3")]
+    c.get_dataset_specializations.return_value = [{"href": f"/mdr/specializations/sdtm/datasetspecializations/{i}", "title": i} for i in ("SYSBP", "BMI")]
+    return c
+
+
+def _lc_get(client, url, c=None):
+    with patch("routes.reports.CDISCApiClient", return_value=c or _lc_mock()):
+        return client.get(url)
+
+
+def test_sidebar_has_lifecycle_section(client):
+    html = _lc_get(client, "/reports/packages").get_data(as_text=True)
+    assert "Lifecycle" in html
+    assert 'href="/reports/lifecycle/bc"' in html and 'href="/reports/lifecycle/sdtm"' in html
+
+
+def test_lifecycle_bc_picker_lists_all_released_concepts(client):
+    resp = _lc_get(client, "/reports/lifecycle/bc")
+    html = resp.get_data(as_text=True)
+    assert resp.status_code == 200
+    # C1 is only in an older release and no longer in the Library: still listed, flagged withdrawn.
+    for cid in ("C1", "C2", "C3"):
+        assert f'value="{cid}"' in html
+    assert "One (withdrawn)" in html and "Two (withdrawn)" not in html
+
+
+def test_lifecycle_bc_timeline(client):
+    html = _lc_get(client, "/reports/lifecycle/bc?id=C2").get_data(as_text=True)
+    assert "Introduced" in html and "Changed" in html
+    assert html.index("2023-02-13") < html.index("2024-05-01")  # oldest first, left to right
+    assert "def 2023-02-13" in html and "def 2024-05-01" in html  # metadata + change
+    assert "/reports/packages/2024-05-01/bc/C2" in html
+
+
+def test_lifecycle_bc_withdrawn_concept(client):
+    html = _lc_get(client, "/reports/lifecycle/bc?id=C1").get_data(as_text=True)
+    assert "Introduced" in html and "no longer in the current CDISC Library" in html
+
+
+def test_lifecycle_bc_current_concept_is_not_withdrawn(client):
+    html = _lc_get(client, "/reports/lifecycle/bc?id=C2").get_data(as_text=True)
+    assert "no longer in the current CDISC Library" not in html
+
+
+def test_lifecycle_sdtm_timeline(client):
+    html = _lc_get(client, "/reports/lifecycle/sdtm?id=SYSBP").get_data(as_text=True)
+    assert "Systolic Blood Pressure" in html and "Introduced" in html and "Unchanged" in html
+    assert "/reports/packages/2023-02-13/spec/SYSBP" in html
+
+
+def test_lifecycle_rejects_bad_id(client):
+    assert _lc_get(client, "/reports/lifecycle/bc?id=../etc").status_code == 400
+
+
+def test_lifecycle_unknown_kind_is_404(client):
+    assert _lc_get(client, "/reports/lifecycle/cdash").status_code == 404
+
+
+def test_lifecycle_unknown_id_shows_message(client):
+    resp = _lc_get(client, "/reports/lifecycle/bc?id=C999")
+    assert resp.status_code == 200 and "not found in any" in resp.get_data(as_text=True)
+
+
+def test_lifecycle_api_errors_are_shown(client):
+    c = _lc_mock()
+    c.get_bc_packages.return_value = [{"error": "pkgboom"}]
+    html = _lc_get(client, "/reports/lifecycle/bc?id=C2", c).get_data(as_text=True)
+    assert "pkgboom" in html
+
+
+def test_lifecycle_nav_item_is_active(client):
+    html = _lc_get(client, "/reports/lifecycle/sdtm?id=SYSBP").get_data(as_text=True)
+    nav = html[html.index('href="/reports/lifecycle/sdtm"') :]
+    assert "active" in nav[: nav.index(">")]
+
+
+def test_lifecycle_breadcrumb(client):
+    crumb = _breadcrumb(_lc_get(client, "/reports/lifecycle/bc?id=C2").get_data(as_text=True))
+    assert 'href="/reports/lifecycle/bc"' in crumb
+    assert crumb.index("Reports") < crumb.index("Lifecycle") < crumb.index("Biomedical Concept") < crumb.index("C2")

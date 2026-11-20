@@ -214,3 +214,29 @@ class TestGetSdtmDomainCodes:
         with app.app_context():
             result = CDISCApiClient().get_sdtm_domain_codes()
         assert "error" in result[0]
+
+
+class TestCachedCustomTtl:
+    """``cached(..., ttl=...)`` lets immutable data (released packages) stay fresh longer."""
+
+    def setup_method(self):
+        cdisc_api._cache.clear()
+
+    def test_entry_older_than_default_ttl_is_fresh_under_longer_ttl(self):
+        cdisc_api._cache["k"] = (time.time() - cdisc_api._CACHE_TTL - 10, ["old"])
+        calls = []
+        assert _cached("k", lambda: calls.append(1) or ["new"], ttl=86400) == ["old"]
+        assert calls == []
+
+    def test_entry_older_than_custom_ttl_refreshes(self):
+        cdisc_api._cache["k"] = (time.time() - 100, ["old"])
+        assert _cached("k", lambda: ["new"], ttl=50) == ["new"]
+
+    def test_long_ttl_entry_served_stale_when_refresh_fails(self):
+        cdisc_api._cache["k"] = (time.time() - 86400 - 10, ["old"])
+
+        def boom():
+            raise RuntimeError("down")
+
+        # The stale grace period follows the longer fresh window.
+        assert _cached("k", boom, ttl=86400) == ["old"]
